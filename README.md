@@ -2,7 +2,7 @@
 
 ## Zigbang Doorlock for Home Assistant
 
-이 프로젝트는 직방 도어락을 **Home Assistant**에 연동하기 위한 **pyscript** 코드입니다. 이 코드를 사용하면 Home Assistant에서 도어락의 상태를 확인하고, 잠금을 해제할 수 있습니다.
+직방 도어락을 **Home Assistant**에 연동하기 위한 **pyscript** 코드입니다. 이 코드를 사용하면 Home Assistant에서 도어락의 상태를 확인하고, 잠금을 해제할 수 있습니다.
 
 -----
 
