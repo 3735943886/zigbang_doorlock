@@ -168,7 +168,7 @@ def zb_loop_internal(timeout, unique, interval, kill_me):
   global ZB_LAST_STAT
   task.unique(unique, kill_me)
   stats = {}
-  for i in range(0, timeout):
+  for _ in range(0, timeout):
     try:
       stats = zb_get_status()
       for index, _ in enumerate(stats):
