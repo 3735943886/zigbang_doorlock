@@ -2,7 +2,7 @@
 
 ## Zigbang Doorlock for Home Assistant
 
-직방 도어락을 **Home Assistant**에 연동하기 위한 **pyscript** 코드입니다. 이 코드를 사용하면 Home Assistant에서 도어락의 상태를 확인하고, 잠금을 해제할 수 있습니다.
+직방 도어락을 **Home Assistant**에 연동하기 위한 **Pyscript** 코드입니다. 이 코드를 사용하면 Home Assistant에서 도어락의 상태를 확인하고, 잠금을 해제할 수 있습니다.
 
 -----
 
@@ -21,8 +21,8 @@
 #### 1\. 필수 구성 요소 설치
 
   - **Home Assistant**: 이 코드는 Home Assistant 환경에서 동작합니다.
-  - **pyscript**: Home Assistant 커뮤니티 저장소(HACS)를 통해 `pyscript` 통합을 설치하고 설정해야 합니다. 자세한 내용은 [pyscript 통합 문서](https://hacs-pyscript.readthedocs.io/en/latest/installation.html)를 참고하세요.
-  - **MQTT**: Home Assistant에 연동된 MQTT 브로커가 필요합니다. 자세한 내용은 [MQTT 통합 문서](https://www.home-assistant.io/integrations/mqtt/)를 참고하세요.
+  - **Pyscript**: Home Assistant 커뮤니티 저장소(HACS)를 통해 `Pyscript` 통합을 설치하고 설정해야 합니다. 자세한 내용은 [Pyscript](https://hacs-pyscript.readthedocs.io/en/latest/installation.html)를 참고하세요.
+  - **MQTT**: Home Assistant에 연동된 MQTT 브로커가 필요합니다. 자세한 내용은 [MQTT](https://www.home-assistant.io/integrations/mqtt/)를 참고하세요.
 
 #### 2\. 코드 다운로드
 
