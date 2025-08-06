@@ -258,7 +258,7 @@ async def zb_auth():
       ZB_HEADERS["Authorization"] = "CUL "
     if "AuthCode" in ZB_HEADERS:
       del ZB_HEADERS["AuthCode"]
-    if "AppVer" not in ZB_AUTH_BODY:
+    if "appVer" not in ZB_AUTH_BODY:
       await zb_get_appver()
     ZB_AUTH_BODY["createDate"] = zb_createdate()
     ZB_AUTH_BODY.update(LOGIN_DATA)
