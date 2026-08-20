@@ -66,18 +66,24 @@ add-on으로 띄운 경우 observer 포트(기본 9883)가 기본적으로 host�
 2. **relay observer의 `Basic-AttrGroup` push** — 위 REST 이후 새로 등록/변경된 슬롯을 보조적으로
    반영(재시작 없이도 최신 유지).
 
-REST 호출이 실패해도(계정 문제, 네트워크 등) lock/battery/rssi 등 핵심 기능은 relay로 그대로
-동작하고, `last_method`/`last_user_name`만 `external`(대분류)로 폴백합니다.
+**세분화 판정은 "레지스트리[pinId].pinType == 이번 이벤트의 access"가 일치할 때만** 이뤄집니다
+(하드코딩된 access 허용목록이 아님) — **실측(2026-08-20, relay tap) 확인 결과 access 값 자체가
+이미 pinType 코드와 동일하게 옵니다**(예: 지문으로 열면 `access:"FGP"`가 그대로 옴, `RFC`로
+뭉뚱그려 오지 않음. 마스터/번호코드는 `MST`). 이 매칭 방식 덕에 지금 아는 코드(`RFC`/`FGP`/`MST`)뿐
+아니라 앞으로 나올 새 access 코드도 코드 수정 없이 자동으로 세분화됩니다.
 
-`access=="RFC"`(카드/키패드/지문 등 외부 물리인증)일 때만 이 레지스트리 조회를 적용합니다:
-- `SVR`(원격열림): pinId가 원격열림용 임시 NFC키(HA 자신의 injection 포함)를 가리켜서 pinType이
-  항상 NFC로 나옴 — 실제 구현 detail일 뿐이라 `remote`로 고정.
-- `AUTO`/`INDOOR`: pinId가 실측상 항상 `0`(MST, 필러값)이라 진짜 자격증명이 아님.
+- `pin_id`(→ `last_pin_id`)는 **access와 무관하게 항상** 이벤트의 원본 `pinId`로 갱신됩니다.
+- `pin_type`/`last_method`/`pin_name`/`last_user_name`은 위 매칭이 성립할 때만 채워집니다. 매칭이
+  안 되면(`SVR`처럼 pinId가 원격열림용 임시 NFC키를 가리켜 실제 pinType이 NFC로 나오는 경우,
+  `AUTO`/`INDOOR`/`MNU`/`RMC`처럼 pinId가 필러거나 다른 슬롯을 가리키는 경우, 레지스트리 미동기화,
+  진짜 미상 access 등) `pin_type`/`pin_name`은 `None`으로 비고, `last_method`는 `ACCESS_LABELS`의
+  대분류 라벨로 폴백하며, 그마저 없는 완전히 낯선 access 값은 **원본 문자열 그대로**
+  `last_method`/`event.access` attribute에 남습니다 — 어떤 경우든 access 정보 자체가 씹히진
+  않습니다.
 
-`RFC`일 때만 `last_method`가 `keytag`/`fingerprint`/`keypad` 등으로 세분화되고, 등록시 이름을
-지정해뒀다면 `last_user_name`에 그 이름이 그대로 채워집니다(예: 실계정 테스트에서 카드에 등록된
-실명이 그대로 노출됨 확인 — 로그북/히스토리에 남으니 원치 않으면 `event.*_activity`/`lock.*` 쪽
-`pin_name`/`last_user_name` 속성을 대시보드에서 안 보이게 가리는 걸 권장).
+등록시 이름을 지정해뒀다면 `last_user_name`에 그 이름이 그대로 채워집니다(예: 실계정 테스트에서
+카드에 등록된 실명이 그대로 노출됨 확인 — 로그북/히스토리에 남으니 원치 않으면 `event.*_activity`/
+`lock.*` 쪽 `pin_name`/`last_user_name` 속성을 대시보드에서 안 보이게 가리는 걸 권장).
 
 ## 알려진 제한
 

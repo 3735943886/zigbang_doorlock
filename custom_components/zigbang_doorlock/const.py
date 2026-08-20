@@ -18,20 +18,22 @@ DEFAULT_RELAY_PORT = 9883
 # 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
 # last_access, last_method, last_user_name, last_event_at, last_pin_id
 
-# IDPEVENT(622)의 access -> 대분류 라벨. RFC(외부 물리인증)는 실제로는 PIN_TYPE_LABELS 로
-# 더 세분화됨(아래) — 이건 그 세분화가 안 될 때(레지스트리 미동기화 등)의 폴백.
+# IDPEVENT(622)의 access -> 대분류 라벨. 카드/지문/마스터코드 등 실제 자격증명으로 열린 경우엔
+# access 값 자체가 아래 PIN_TYPE_LABELS 코드와 동일하게 온다(실측 2026-08-20 relay tap 확인:
+# RFC=카드/키태그, FGP=지문, MST=마스터/번호코드). __init__.py는 이걸 하드코딩된 access 허용목록이
+# 아니라 "레지스트리[pinId].pinType == access" 매칭으로 판정한다 — 그래서 여기 없는 새 access
+# 코드가 나와도(아는 pinType이기만 하면) 코드 수정 없이 자동으로 세분화된다. 이 딕셔너리는 매칭이
+# 안 되는 경우(SVR/AUTO/INDOOR/MNU/RMC, 레지스트리 미동기화, 진짜 미상 코드 등)의 폴백 라벨이고,
+# 없는 키는 access 원본 문자열 그대로 노출한다(ACCESS_LABELS.get(access, access)) — 미상 값도
+# last_method/event.access attribute에 그대로 남아서 안 씹힌다.
 ACCESS_LABELS: dict[str, str] = {
     "SVR": "remote",
-    "RFC": "external",
     "INDOOR": "indoor",
     "AUTO": "auto_relock",
+    "MNU": "manual_lock",  # 수동 잠금(안에서 손으로) — 실측 2026-08-20 확인, INDOOR(수동 열림)의 짝
+    "RMC": "remote_controller",  # 리모컨 — pinId 항상 0(필러)이라 레지스트리 조회 무의미(실측 확인)
 }
 
-# access=="RFC" 인 IDPEVENT만 pinId -> Basic-AttrGroup 의 pinInfoXXX 레지스트리로 조회해서
-# 세분화한다. SVR/AUTO/INDOOR 는 레지스트리에 값이 있어도 일부러 안 씀:
-#   - SVR: pinId 가 원격열림용 임시NFC키(HA 자신의 injection 포함)를 가리켜서 pinType이 항상
-#     NFC 로 나옴 — "remote"가 실제 의미에 더 맞음(누가 앱으로 열었나가 중요, 임시키 구현detail 아님).
-#   - AUTO/INDOOR: pinId 가 항상 0(MST, 필러값) — 실제 자격증명이 아님(PROTOCOL.md §9-1, fixture 실측 둘 다 확인).
 PIN_TYPE_LABELS: dict[str, str] = {
     "MST": "master",
     "RFC": "keytag",
@@ -45,10 +47,14 @@ PIN_TYPE_LABELS: dict[str, str] = {
     "SDK": "temp_key",  # TempKeyListViewModel(임시키 목록화면)에서만 쓰는 타입 — 추정
 }
 
-# IDPEVENT msgCategory 622(잠금상태변경)의 access -> event_type
+# IDPEVENT msgCategory 622(잠금상태변경)의 access -> event_type. RFC/FGP/MST(카드/지문/마스터코드)는
+# 전부 "외부 물리 자격증명으로 열림"이라는 같은 대분류로 묶는다 — 세부 방법은 event의 pin_type/
+# pin_name attribute가 담당(실측 2026-08-20 확인).
 EVENT_TYPE_UNLOCKED = {
     "SVR": "unlocked_remote",
     "RFC": "unlocked_external",
+    "FGP": "unlocked_external",
+    "MST": "unlocked_external",
     "INDOOR": "unlocked_indoor",
 }
 EVENT_TYPE_LOCKED = "locked"

@@ -45,9 +45,6 @@ from .coordinator import ZigbangCoordinator
 from .protocol import extract_basic_attrgroup_patch, extract_idpevent, extract_pin_registry_patch
 from .relay_client import RelayClient
 
-# 이 access 값일 때만 pinId->레지스트리 조회로 세분화한다(const.py PIN_TYPE_LABELS 주석 참조).
-_REGISTRY_RESOLVABLE_ACCESS = {"RFC"}
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -219,22 +216,28 @@ def _handle_relay_message(
             patch["locked"] = event["locked"]
             patch["last_access"] = event.get("access")
 
+            access = event.get("access")
+            pin_id = event.get("pin_id")
             pin_info = None
-            if event.get("access") in _REGISTRY_RESOLVABLE_ACCESS and event.get("pin_id") is not None:
+            if pin_id is not None:
                 registry = coordinator.data.get(tp_id, {}).get("pin_registry", {})
-                pin_info = registry.get(event["pin_id"])
+                pin_info = registry.get(pin_id)
 
-            if pin_info and pin_info.get("pin_type"):
-                pin_type = pin_info["pin_type"]
-                patch["last_method"] = PIN_TYPE_LABELS.get(pin_type, pin_type)
+            # 레지스트리의 pinType이 이번 이벤트의 access와 일치할 때만 그 자격증명으로 확정한다.
+            # access 값 자체가 대부분 pinType 코드와 동일하게 오므로(실측 2026-08-20: RFC=카드/키태그,
+            # FGP=지문, MST=마스터/번호코드) 이 매칭 하나로 하드코딩된 access 허용목록 없이도 지금 아는
+            # 코드는 물론 앞으로 나올 새 코드까지 커버된다. 불일치(SVR의 임시키 구현detail, RMC/AUTO/
+            # INDOOR처럼 pinId가 다른 슬롯을 가리키거나 필러인 경우 등)는 자연스럽게 폴백으로 빠진다.
+            if pin_info and pin_info.get("pin_type") == access:
+                patch["last_method"] = PIN_TYPE_LABELS.get(access, access)
                 patch["last_user_name"] = pin_info.get("pin_name")
+                event["pin_type"] = access
+                event["pin_name"] = pin_info.get("pin_name")
             else:
-                # 레지스트리 미동기화(HA 갓 재시작 등) 또는 SVR/AUTO/INDOOR — 대분류 폴백.
-                patch["last_method"] = ACCESS_LABELS.get(event.get("access"))
+                patch["last_method"] = ACCESS_LABELS.get(access, access)
                 patch["last_user_name"] = None
-
-            event["pin_type"] = pin_info.get("pin_type") if pin_info else None
-            event["pin_name"] = pin_info.get("pin_name") if pin_info else None
+                event["pin_type"] = None
+                event["pin_name"] = None
 
         _merge_state(coordinator, tp_id, patch)
         async_dispatcher_send(hass, SIGNAL_EVENT.format(entry_id, tp_id), event)
