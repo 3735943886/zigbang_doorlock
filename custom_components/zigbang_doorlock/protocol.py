@@ -148,7 +148,33 @@ def build_register_key(sid: str, tpid: str, pin_token: str, pin_name: str = "HA"
                 "weeklyRepeat": [],
                 "count": 0,
             },
+            "from": pin_token,
         },
+    }
+    return topic, payload
+
+
+def build_wake(sid: str, tpid: str) -> tuple[str, dict[str, Any]]:
+    """func 508(arg 없음) — 실캡처(fixtures/r5c_publishes.jsonl #47-50/#65-68, 2026-08-20 실기기
+    앱 unlock 실측)에서 트리거(407) 직전에 항상 먼저 오는 메시지. 이거 없이 407만 단독으로 보내면
+    락이 그냥 무시함(실측: 물리적으로 안 열림) — 407 보내기 전에 항상 먼저 보내야 한다."""
+    topic = f"ocp/{sid}/{tpid}"
+    payload = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": f"wp-{secrets.token_hex(4)}-{secrets.token_hex(3)}",
+        "msgDate": _now_ms(),
+        "resCode": "200",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "data": {"func": 508, "arg": {}},
     }
     return topic, payload
 

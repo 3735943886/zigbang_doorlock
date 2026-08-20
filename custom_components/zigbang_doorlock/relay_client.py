@@ -14,12 +14,16 @@ from typing import Any
 
 import aiomqtt
 
-from .protocol import build_register_key, build_trigger_unlock
+from .protocol import build_register_key, build_trigger_unlock, build_wake
 
 _LOGGER = logging.getLogger(__name__)
 
 _RECONNECT_INTERVAL = 15
 _REGISTER_SETTLE_DELAY = 1.0  # 영구키 등록(1회성)→트리거 사이, 락이 pin을 반영할 시간
+# wake(508)→트리거(407) 사이 지연. 실캡처(앱)에서는 클라우드 왕복 지연 때문에 자연스럽게
+# 이 정도 간격이 생기는데, 우리는 로컬 relay라 딜레이 없이 바로 붙여보내면 락이 508을 아직
+# 처리 중일 때 407이 도착해서 resCode 400으로 거절당함(실측 확인) — 그 간격을 흉내낸다.
+_WAKE_SETTLE_DELAY = 0.5
 
 OnMessage = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
@@ -102,8 +106,8 @@ class RelayClient:
 
     async def async_unlock(self, tpid: str) -> None:
         """영구 HA 키로 열림. 등록 안 확인된 tpId 만 이번 호출에서 먼저 등록(1회성)하고,
-        그 이후로는 매번 트리거(407)만 보낸다 — 등록/삭제를 반복하던 예전 방식보다 단순하고,
-        pin 슬롯이 매번 쌓이는 문제도 구조적으로 없다."""
+        그 이후로는 매번 wake(508)+트리거(407)만 보낸다 — 등록/삭제를 반복하던 예전 방식보다
+        단순하고, pin 슬롯이 매번 쌓이는 문제도 구조적으로 없다."""
         sid = self._sid_by_tpid.get(tpid)
         if sid is None:
             raise RelayUnlockError(
@@ -118,6 +122,12 @@ class RelayClient:
             await self.publish(reg_topic, reg_payload)
             await asyncio.sleep(_REGISTER_SETTLE_DELAY)
             self._registered.add(tpid)
+
+        # func 508(빈 arg)을 407 직전에 항상 먼저 보내야 함 — 실캡처 확인, protocol.py의
+        # build_wake 참조. 이거 빠뜨리면 publish 자체는 성공해도 락이 407을 무시해서 안 열림.
+        wake_topic, wake_payload = build_wake(sid, tpid)
+        await self.publish(wake_topic, wake_payload)
+        await asyncio.sleep(_WAKE_SETTLE_DELAY)
 
         trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
