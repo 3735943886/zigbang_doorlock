@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Zigbang account",
+        "description": "Used once to fetch your registered doorlocks. Runtime state/control uses the local relay instead.",
+        "data": {
+          "username": "Zigbang ID",
+          "password": "Password",
+          "imei": "IMEI (optional, auto-generated if empty)"
+        }
+      },
+      "relay": {
+        "title": "Local relay server",
+        "description": "Address of the ../zigbang relay's observer port.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed: check ID, password, or IMEI.",
+      "cannot_connect": "Could not reach the Zigbang cloud server.",
+      "no_locks_found": "No doorlocks registered on this account.",
+      "relay_unreachable": "Could not reach the relay server."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "relay_unreachable": "Could not reach the relay server."
+    }
+  },
+  "entity": {
+    "lock": {
+      "lock": {
+        "name": "Doorlock"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "battery_raw": {
+        "name": "Battery (raw)"
+      },
+      "rssi": {
+        "name": "Wi-Fi signal"
+      }
+    },
+    "event": {
+      "activity": {
+        "name": "Activity",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "locked": "Locked",
+              "unlocked_remote": "Unlocked remotely",
+              "unlocked_external": "Unlocked (external)",
+              "unlocked_indoor": "Unlocked from inside",
+              "unlocked": "Unlocked",
+              "key_added": "Key added",
+              "key_removed": "Key removed"
+            }
+          }
+        }
+      }
+    }
+  }
+}

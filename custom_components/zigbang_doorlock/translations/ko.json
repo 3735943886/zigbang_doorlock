@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "직방 계정",
+        "description": "등록된 도어락 목록을 가져오는 데 1회만 사용합니다. 이후 상태확인/제어는 로컬 relay를 통해 이뤄집니다.",
+        "data": {
+          "username": "직방 아이디",
+          "password": "비밀번호",
+          "imei": "IMEI (선택, 비우면 자동 생성)"
+        }
+      },
+      "relay": {
+        "title": "로컬 relay 서버",
+        "description": "../zigbang relay의 observer 포트 주소를 입력하세요.",
+        "data": {
+          "host": "호스트",
+          "port": "포트"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "로그인 실패: 아이디, 비밀번호, IMEI를 확인해주세요.",
+      "cannot_connect": "직방 서버에 연결할 수 없습니다.",
+      "no_locks_found": "이 계정에 등록된 도어락이 없습니다.",
+      "relay_unreachable": "relay 서버에 연결할 수 없습니다."
+    },
+    "abort": {
+      "already_configured": "이미 등록된 계정입니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "host": "호스트",
+          "port": "포트"
+        }
+      }
+    },
+    "error": {
+      "relay_unreachable": "relay 서버에 연결할 수 없습니다."
+    }
+  },
+  "entity": {
+    "lock": {
+      "lock": {
+        "name": "도어락"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "배터리"
+      },
+      "battery_raw": {
+        "name": "배터리 (원본값)"
+      },
+      "rssi": {
+        "name": "Wi-Fi 신호"
+      }
+    },
+    "event": {
+      "activity": {
+        "name": "활동 기록",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "locked": "잠김",
+              "unlocked_remote": "원격 열림",
+              "unlocked_external": "외부 인증으로 열림",
+              "unlocked_indoor": "실내에서 열림",
+              "unlocked": "열림",
+              "key_added": "키 등록",
+              "key_removed": "키 삭제"
+            }
+          }
+        }
+      }
+    }
+  }
+}

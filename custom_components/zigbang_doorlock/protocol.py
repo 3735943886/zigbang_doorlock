@@ -1,0 +1,189 @@
+"""직방 도어락 OCP 프로토콜 파싱/생성.
+
+근거: ../zigbang(private/PROTOCOL.md §9~10, private/fixtures/r5c_publishes.jsonl 실측).
+relay observer(9883)에서 tap 되는 메시지는 전부 평문 JSON(encType:"0") — 별도 복호 불필요.
+"""
+from __future__ import annotations
+
+import json
+import secrets
+import time
+import uuid
+from datetime import datetime
+from typing import Any
+
+from .const import (
+    EVENT_TYPE_KEY_ADDED,
+    EVENT_TYPE_KEY_REMOVED,
+    EVENT_TYPE_LOCKED,
+    EVENT_TYPE_UNLOCKED,
+)
+
+# Basic-AttrGroup(funcType 021) 페이로드는 "변경된 필드만" 부분갱신으로 오기도 함
+# (fixture 실측 — 매번 전체 덤프가 아님) → 아는 키만 뽑아 상태캐시에 merge.
+_ATTR_FIELD_MAP = {
+    "battery": "battery_raw",
+    "locked": "locked",
+    "wifiStrength": "rssi",
+}
+
+# msgCategory: 622=잠금상태변경, 626=키등록확인, 628=키삭제확인, 634=키싱크(1회성),
+# 670=DST정보(무관), 905=원인미상(무관) — PROTOCOL.md §10.
+_RELEVANT_CATEGORIES = {622, 626, 628}
+
+
+def parse_ocp_payload(raw: bytes) -> dict[str, Any] | None:
+    """PUBLISH payload(bytes) -> OCP JSON dict. 실패시 None(락 하트비트 등 비JSON 프레임 존재 가능)."""
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def extract_basic_attrgroup_patch(data: dict[str, Any]) -> dict[str, Any]:
+    """Basic-AttrGroup data에서 우리가 다루는 필드만 골라 상태패치로 변환."""
+    return {
+        dst: data[src]
+        for src, dst in _ATTR_FIELD_MAP.items()
+        if src in data
+    }
+
+
+def extract_idpevent(data: dict[str, Any], msg_date_ms: int | None) -> dict[str, Any] | None:
+    """IDPEVENT data -> 정규화된 이벤트. 관심없는 category(634/670/905 등)는 None."""
+    category = data.get("msgCategory")
+    if category not in _RELEVANT_CATEGORIES:
+        return None
+
+    at = _epoch_ms_to_iso(msg_date_ms) if msg_date_ms else None
+
+    if category == 622:
+        locked = bool(data.get("locked"))
+        access = data.get("access")
+        if locked:
+            event_type = EVENT_TYPE_LOCKED
+        else:
+            event_type = EVENT_TYPE_UNLOCKED.get(access, "unlocked")
+        return {
+            "event_type": event_type,
+            "locked": locked,
+            "access": access,
+            "pin_id": data.get("pinId"),
+            "at": at,
+        }
+
+    if category == 626:
+        return {"event_type": EVENT_TYPE_KEY_ADDED, "pin_id": data.get("pinId"), "pin_type": data.get("pinType"), "at": at}
+
+    if category == 628:
+        return {"event_type": EVENT_TYPE_KEY_REMOVED, "pin_id": data.get("pinId"), "pin_type": data.get("pinType"), "at": at}
+
+    return None
+
+
+def battery_raw_to_pct(raw: int | None) -> int | None:
+    """도어락 배터리 raw값 -> 표시용 %.
+
+    임계값은 zigbang_doorlock_pyscript(zb_battery)와 동일 — 실측 기반 근사치이며
+    선형 변환이 아니라 계단식(펌웨어가 보고하는 값 자체가 4~5단계 코드에 가까움)."""
+    if raw is None:
+        return None
+    for threshold, pct in ((60, 100), (55, 80), (52, 60), (50, 40)):
+        if raw >= threshold:
+            return pct
+    return 20
+
+
+def build_unlock_sequence(sid: str, tpid: str) -> list[tuple[str, dict[str, Any]]]:
+    """원격열림 3단계 시퀀스(등록→트리거→정리) 생성. PROTOCOL.md §9 그대로.
+
+    반환: [(topic, payload_dict), ...] — 순서대로 publish. 마지막(정리)은 결과 무관 fire-and-forget 가능.
+    """
+    topic = f"ocp/{sid}/{tpid}"
+    pin = secrets.token_hex(8)  # 16-hex, 매회 신규 발급(재사용시 락 pin슬롯 충돌 여지 — 실측상 권장 안 됨)
+    now = datetime.now()
+    start = now.strftime("%Y-%m-%d %H:%M")
+
+    register = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": str(uuid.uuid4()),
+        "msgDate": _now_ms(),
+        "resCode": "",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "authToken": "",
+        "data": {
+            "func": 408,
+            "arg": {
+                "pinType": "NFC",
+                "pinSort": "PMT",
+                "pinName": "HA Unlock",
+                "pin": pin,
+                "pinStatus": "NOR",
+                "start": start,
+                "end": "2999-12-31 00:00",
+                "dailyRepeat": {"start": "", "end": ""},
+                "weeklyRepeat": [],
+                "count": 0,
+            },
+        },
+    }
+
+    trigger = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": f"op-{_now_ms()}-{secrets.token_hex(3)}",
+        "msgDate": _now_ms(),
+        "resCode": "200",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        # authToken 필드 자체를 안 보냄(실캡처 그대로 — 생략이 맞음, PROTOCOL.md §9-2)
+        "data": {"func": 407, "arg": {"locked": False, "pin": pin, "access": "SVR"}, "from": pin},
+    }
+
+    cleanup = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": str(uuid.uuid4()),
+        "msgDate": _now_ms(),
+        "resCode": "",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "authToken": "",
+        "data": {"func": 420, "arg": {"pin": pin}},
+    }
+
+    return [(topic, register), (topic, trigger), (topic, cleanup)]
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _epoch_ms_to_iso(ms: int) -> str | None:
+    try:
+        return datetime.fromtimestamp(ms / 1000).astimezone().isoformat()
+    except (ValueError, OSError, OverflowError):
+        return None
