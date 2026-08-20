@@ -52,7 +52,8 @@ class RelayClient:
         # tpId -> 이 통합구성요소 전용 영구 NFC 키 토큰(config_flow/__init__.py 에서 1회 생성,
         # entry.data 에 영구저장). 매 unlock 마다 새로 안 만들고 이걸 계속 재사용한다.
         self._ha_pin_tokens = ha_pin_tokens
-        # REST(getdoorkeys)로 이미 등록 확인된 tpId 집합 — 여기 없는 애만 첫 unlock 때 등록(408)부터.
+        # REST(getdoorkeys)로 이미 등록 확인된 tpId 집합 — 여기 없는 애는 락 트래픽이 처음
+        # 관측되는 즉시(self-heal), 또는 첫 unlock/수동새로고침(ensure_registered) 때 등록(408)됨.
         self._registered = set(already_registered)
 
     async def run(self) -> None:
@@ -93,6 +94,11 @@ class RelayClient:
         sid = payload.get("sId")
         if sid:
             self._sid_by_tpid[tpid] = sid
+            if tpid not in self._registered:
+                # REST 로 시딩할 때(HA 재시작 등) 이 tpId 의 HA pin 이 락에 없는 걸로 확인됐던
+                # 경우 — unlock 을 기다리지 않고, 락 트래픽이 처음 관측되는 즉시 self-heal 등록.
+                # (예: 사용자가 앱에서 HA 키를 직접 지웠거나 락이 초기화된 경우 대비)
+                await self._self_heal_registration(tpid, sid)
 
         result = self._on_message(tpid, payload)
         if asyncio.iscoroutine(result):
@@ -115,13 +121,10 @@ class RelayClient:
                 "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
             )
 
-        pin_token = self._ha_pin_tokens[tpid]
-
         if tpid not in self._registered:
-            reg_topic, reg_payload = build_register_key(sid, tpid, pin_token)
-            await self.publish(reg_topic, reg_payload)
-            await asyncio.sleep(_REGISTER_SETTLE_DELAY)
-            self._registered.add(tpid)
+            await self._register_now(tpid, sid)
+
+        pin_token = self._ha_pin_tokens[tpid]
 
         # func 508(빈 arg)을 407 직전에 항상 먼저 보내야 함 — 실캡처 확인, protocol.py의
         # build_wake 참조. 이거 빠뜨리면 publish 자체는 성공해도 락이 407을 무시해서 안 열림.
@@ -131,3 +134,30 @@ class RelayClient:
 
         trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
+
+    async def ensure_registered(self, tpid: str) -> None:
+        """REST 재조회(수동 새로고침 버튼)로 이 tpId 의 HA pin 이 락에서 안 보이면 호출 —
+        이미 등록 확인된 상태면 아무것도 안 하고, 아니면 지금 바로 등록(408)만 보낸다
+        (wake/trigger 는 안 보냄 — 문을 여는 부작용 없이 키만 복구)."""
+        if tpid in self._registered:
+            return
+        sid = self._sid_by_tpid.get(tpid)
+        if sid is None:
+            raise RelayUnlockError(
+                "아직 이 도어락의 세션 정보(sId)를 관측하지 못했습니다 — "
+                "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
+            )
+        await self._register_now(tpid, sid)
+
+    async def _self_heal_registration(self, tpid: str, sid: str) -> None:
+        try:
+            await self._register_now(tpid, sid)
+        except RelayUnlockError as err:
+            _LOGGER.warning("HA pin 자동 재등록 실패(tpId=%s): %s", tpid, err)
+
+    async def _register_now(self, tpid: str, sid: str) -> None:
+        pin_token = self._ha_pin_tokens[tpid]
+        reg_topic, reg_payload = build_register_key(sid, tpid, pin_token)
+        await self.publish(reg_topic, reg_payload)
+        await asyncio.sleep(_REGISTER_SETTLE_DELAY)
+        self._registered.add(tpid)

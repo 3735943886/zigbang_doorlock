@@ -159,24 +159,35 @@ async def _fetch_initial_pin_registries(
         for tp_id, lock in locks_by_tpid.items():
             raw = await client.fetch_pin_registry(lock["device_id"])
             public_registries[tp_id] = _strip_pin_tokens(raw)
-            if any(info.get("pin_token") == ha_pin_tokens[tp_id] for info in raw.values()):
+            if _has_ha_pin(raw, ha_pin_tokens[tp_id]):
                 already_registered.add(tp_id)
     except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
         _LOGGER.warning("pin 레지스트리 시딩 실패(카드/지문 등 세분화는 안 되지만 나머지는 정상 동작): %s", err)
     return public_registries, already_registered
 
 
+def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
+    return any(info.get("pin_token") == ha_pin_token for info in registry.values())
+
+
 async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> None:
     """button.py 의 수동 새로고침에서 호출 — 여기선 실패를 삼키지 않고 그대로 올려서
-    버튼을 누른 사용자에게 실패가 보이게 한다(시작시 자동시딩과 반대 정책)."""
+    버튼을 누른 사용자에게 실패가 보이게 한다(시작시 자동시딩과 반대 정책).
+    REST 로 다시 받아본 결과 HA pin 이 안 보이면(사용자가 앱에서 직접 지웠거나 락 초기화 등)
+    바로 재등록까지 한다 — 다음 unlock 을 기다리지 않음."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: ZigbangCoordinator = data["coordinator"]
     lock_info = data["locks"][tp_id]
+    relay: RelayClient = data["relay"]
 
     client = _build_cloud_client(hass, entry)
     await client.login()
     registry = await client.fetch_pin_registry(lock_info["device_id"])
     _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry))
+
+    if not _has_ha_pin(registry, lock_info["ha_pin_token"]):
+        _LOGGER.info("HA pin 이 락에 없어서 재등록합니다(tpId=%s)", tp_id)
+        await relay.ensure_registered(tp_id)
 
 
 def _relay_target(entry: ConfigEntry) -> tuple[str, int]:

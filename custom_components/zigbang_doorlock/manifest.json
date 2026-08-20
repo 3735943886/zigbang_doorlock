@@ -7,5 +7,5 @@
   "issue_tracker": "https://github.com/3735943886/zigbang_doorlock/issues",
   "iot_class": "local_push",
   "requirements": ["aiomqtt>=2.3.0"],
-  "version": "0.3.2"
+  "version": "0.3.3"
 }
