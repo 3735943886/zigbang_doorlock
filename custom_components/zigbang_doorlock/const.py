@@ -15,16 +15,33 @@ CONF_LOCKS = "locks"
 
 DEFAULT_RELAY_PORT = 9883
 
-# 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi,
-# last_access, last_method, last_event_at, last_pin_id
+# 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
+# last_access, last_method, last_user_name, last_event_at, last_pin_id
 
-# IDPEVENT data.access -> 사람이 읽는 라벨. RFC/INDOOR 등은 relay observer(IDPEVENT)만으로는
-# 지문/카드/키패드 등 세부수단을 구분 못 함(그건 TLS 크기지문표 영역, 미구현) — 대분류만 노출.
+# IDPEVENT(622)의 access -> 대분류 라벨. RFC(외부 물리인증)는 실제로는 PIN_TYPE_LABELS 로
+# 더 세분화됨(아래) — 이건 그 세분화가 안 될 때(레지스트리 미동기화 등)의 폴백.
 ACCESS_LABELS: dict[str, str] = {
     "SVR": "remote",
     "RFC": "external",
     "INDOOR": "indoor",
     "AUTO": "auto_relock",
+}
+
+# access=="RFC" 인 IDPEVENT만 pinId -> Basic-AttrGroup 의 pinInfoXXX 레지스트리로 조회해서
+# 세분화한다. SVR/AUTO/INDOOR 는 레지스트리에 값이 있어도 일부러 안 씀:
+#   - SVR: pinId 가 원격열림용 임시NFC키(HA 자신의 injection 포함)를 가리켜서 pinType이 항상
+#     NFC 로 나옴 — "remote"가 실제 의미에 더 맞음(누가 앱으로 열었나가 중요, 임시키 구현detail 아님).
+#   - AUTO/INDOOR: pinId 가 항상 0(MST, 필러값) — 실제 자격증명이 아님(PROTOCOL.md §9-1, fixture 실측 둘 다 확인).
+PIN_TYPE_LABELS: dict[str, str] = {
+    "MST": "master",
+    "RFC": "keytag",
+    "FGP": "fingerprint",
+    "NFC": "nfc_tag",
+    "NUM": "keypad",
+    "RMC": "remote_controller",
+    "VCE": "voice",
+    "BLE": "bluetooth",
+    "FCE": "face",
 }
 
 # IDPEVENT msgCategory 622(잠금상태변경)의 access -> event_type

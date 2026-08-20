@@ -48,6 +48,7 @@ class ZigbangLock(ZigbangEntity, LockEntity):
         return {
             "last_access": state.get("last_access"),
             "last_method": state.get("last_method"),
+            "last_user_name": state.get("last_user_name"),
             "last_event_at": state.get("last_event_at"),
         }
 

@@ -14,10 +14,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import ACCESS_LABELS, CONF_HOST, CONF_LOCKS, CONF_PORT, DOMAIN, PLATFORMS, SIGNAL_EVENT
+from .const import ACCESS_LABELS, CONF_HOST, CONF_LOCKS, CONF_PORT, DOMAIN, PIN_TYPE_LABELS, PLATFORMS, SIGNAL_EVENT
 from .coordinator import ZigbangCoordinator
-from .protocol import extract_basic_attrgroup_patch, extract_idpevent
+from .protocol import extract_basic_attrgroup_patch, extract_idpevent, extract_pin_registry_patch
 from .relay_client import RelayClient
+
+# 이 access 값일 때만 pinId->레지스트리 조회로 세분화한다(const.py PIN_TYPE_LABELS 주석 참조).
+_REGISTRY_RESOLVABLE_ACCESS = {"RFC"}
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,8 +35,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "locked": lock.get("locked"),
             "battery_raw": lock.get("battery_raw"),
             "rssi": None,
+            "pin_registry": {},
             "last_access": None,
             "last_method": None,
+            "last_user_name": None,
             "last_event_at": None,
             "last_pin_id": None,
         }
@@ -96,6 +101,9 @@ def _handle_relay_message(
         return
 
     if msg_code == "Basic-AttrGroup":
+        registry_patch = extract_pin_registry_patch(data)
+        if registry_patch:
+            _merge_pin_registry(coordinator, tp_id, registry_patch)
         patch = extract_basic_attrgroup_patch(data)
         if patch:
             _merge_state(coordinator, tp_id, patch)
@@ -109,7 +117,24 @@ def _handle_relay_message(
         if "locked" in event:
             patch["locked"] = event["locked"]
             patch["last_access"] = event.get("access")
-            patch["last_method"] = ACCESS_LABELS.get(event.get("access"))
+
+            pin_info = None
+            if event.get("access") in _REGISTRY_RESOLVABLE_ACCESS and event.get("pin_id") is not None:
+                registry = coordinator.data.get(tp_id, {}).get("pin_registry", {})
+                pin_info = registry.get(event["pin_id"])
+
+            if pin_info and pin_info.get("pin_type"):
+                pin_type = pin_info["pin_type"]
+                patch["last_method"] = PIN_TYPE_LABELS.get(pin_type, pin_type)
+                patch["last_user_name"] = pin_info.get("pin_name")
+            else:
+                # 레지스트리 미동기화(HA 갓 재시작 등) 또는 SVR/AUTO/INDOOR — 대분류 폴백.
+                patch["last_method"] = ACCESS_LABELS.get(event.get("access"))
+                patch["last_user_name"] = None
+
+            event["pin_type"] = pin_info.get("pin_type") if pin_info else None
+            event["pin_name"] = pin_info.get("pin_name") if pin_info else None
+
         _merge_state(coordinator, tp_id, patch)
         async_dispatcher_send(hass, SIGNAL_EVENT.format(entry_id, tp_id), event)
         return
@@ -118,4 +143,13 @@ def _handle_relay_message(
 def _merge_state(coordinator: ZigbangCoordinator, tp_id: str, patch: dict[str, Any]) -> None:
     new_data = dict(coordinator.data)
     new_data[tp_id] = {**new_data.get(tp_id, {}), **patch}
+    coordinator.async_set_updated_data(new_data)
+
+
+def _merge_pin_registry(coordinator: ZigbangCoordinator, tp_id: str, registry_patch: dict[int, dict[str, Any]]) -> None:
+    new_data = dict(coordinator.data)
+    state = dict(new_data.get(tp_id, {}))
+    registry = {**state.get("pin_registry", {}), **registry_patch}
+    state["pin_registry"] = registry
+    new_data[tp_id] = state
     coordinator.async_set_updated_data(new_data)

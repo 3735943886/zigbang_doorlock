@@ -54,6 +54,7 @@ class ZigbangActivityEvent(ZigbangEntity, EventEntity):
                 "access": event.get("access"),
                 "pin_id": event.get("pin_id"),
                 "pin_type": event.get("pin_type"),
+                "pin_name": event.get("pin_name"),
             },
         )
         self.async_write_ha_state()
