@@ -37,6 +37,7 @@ from .const import (
     CONF_PORT,
     CONF_USERNAME,
     DOMAIN,
+    HA_PIN_NAME,
     PIN_TYPE_LABELS,
     PLATFORMS,
     SIGNAL_EVENT,
@@ -53,7 +54,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     locks_by_tpid = {lock["tp_id"]: lock for lock in locks}
     ha_pin_tokens = {tp_id: lock["ha_pin_token"] for tp_id, lock in locks_by_tpid.items()}
 
-    initial_registries, already_registered = await _fetch_initial_pin_registries(hass, entry, locks_by_tpid, ha_pin_tokens)
+    initial_registries, already_registered, adopted_tokens = await _fetch_initial_pin_registries(
+        hass, entry, locks_by_tpid, ha_pin_tokens
+    )
+    if adopted_tokens:
+        ha_pin_tokens.update(adopted_tokens)
+        locks_by_tpid = {
+            tp_id: ({**lock, "ha_pin_token": adopted_tokens[tp_id]} if tp_id in adopted_tokens else lock)
+            for tp_id, lock in locks_by_tpid.items()
+        }
+        hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_LOCKS: list(locks_by_tpid.values())})
 
     coordinator = ZigbangCoordinator(hass, entry.entry_id)
     coordinator.data = {
@@ -148,11 +158,17 @@ async def _fetch_initial_pin_registries(
     entry: ConfigEntry,
     locks_by_tpid: dict[str, dict[str, Any]],
     ha_pin_tokens: dict[str, str],
-) -> tuple[dict[str, dict[int, dict[str, Any]]], set[str]]:
+) -> tuple[dict[str, dict[int, dict[str, Any]]], set[str], dict[str, str]]:
     """모듈 docstring 참조 — 실패해도 빈 결과로 degrade, 핵심기능(lock/sensor)엔 영향 없음.
-    반환: (엔티티용 공개 레지스트리, HA 영구키가 이미 등록 확인된 tpId 집합)."""
+    반환: (엔티티용 공개 레지스트리, HA 영구키가 이미 등록 확인된 tpId 집합, 채택된 토큰들).
+
+    entry.data 에 저장된 토큰이 락과 안 맞아도, 이름이 HA_PIN_NAME 인 pin이 이미 락에 있으면
+    새로 등록하지 않고 그 토큰을 채택한다 — 안 그러면 재시작마다 새 토큰이 생겨서(entry.data
+    저장이 안 됐거나 재구성된 경우 등) self-heal이 매번 새 pin을 쌓는다(실측 확인된 버그,
+    2026-08-20)."""
     public_registries: dict[str, dict[int, dict[str, Any]]] = {}
     already_registered: set[str] = set()
+    adopted_tokens: dict[str, str] = {}
     try:
         client = _build_cloud_client(hass, entry)
         await client.login()
@@ -161,13 +177,26 @@ async def _fetch_initial_pin_registries(
             public_registries[tp_id] = _strip_pin_tokens(raw)
             if _has_ha_pin(raw, ha_pin_tokens[tp_id]):
                 already_registered.add(tp_id)
+                continue
+            existing = _find_named_pin(raw, HA_PIN_NAME)
+            if existing is not None:
+                _LOGGER.info(
+                    "저장된 HA pin 토큰이 락과 안 맞아서, 락에 이미 등록된 HA pin 토큰을 재사용합니다"
+                    "(tpId=%s) — 새로 등록하지 않음", tp_id,
+                )
+                adopted_tokens[tp_id] = existing["pin_token"]
+                already_registered.add(tp_id)
     except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
         _LOGGER.warning("pin 레지스트리 시딩 실패(카드/지문 등 세분화는 안 되지만 나머지는 정상 동작): %s", err)
-    return public_registries, already_registered
+    return public_registries, already_registered, adopted_tokens
 
 
 def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
     return any(info.get("pin_token") == ha_pin_token for info in registry.values())
+
+
+def _find_named_pin(registry: dict[int, dict[str, Any]], pin_name: str) -> dict[str, Any] | None:
+    return next((info for info in registry.values() if info.get("pin_name") == pin_name and info.get("pin_token")), None)
 
 
 async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> None:
@@ -185,9 +214,26 @@ async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp
     registry = await client.fetch_pin_registry(lock_info["device_id"])
     _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry))
 
-    if not _has_ha_pin(registry, lock_info["ha_pin_token"]):
-        _LOGGER.info("HA pin 이 락에 없어서 재등록합니다(tpId=%s)", tp_id)
-        await relay.ensure_registered(tp_id)
+    if _has_ha_pin(registry, lock_info["ha_pin_token"]):
+        return
+
+    existing = _find_named_pin(registry, HA_PIN_NAME)
+    if existing is not None:
+        _LOGGER.info(
+            "저장된 HA pin 토큰이 락과 안 맞아서, 락에 이미 등록된 HA pin 토큰을 재사용합니다"
+            "(tpId=%s) — 새로 등록하지 않음", tp_id,
+        )
+        adopted = existing["pin_token"]
+        new_lock_info = {**lock_info, "ha_pin_token": adopted}
+        data["locks"] = {**data["locks"], tp_id: new_lock_info}
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_LOCKS: list(data["locks"].values())}
+        )
+        relay.adopt_token(tp_id, adopted)
+        return
+
+    _LOGGER.info("HA pin 이 락에 없어서 재등록합니다(tpId=%s)", tp_id)
+    await relay.ensure_registered(tp_id)
 
 
 def _relay_target(entry: ConfigEntry) -> tuple[str, int]:

@@ -17,6 +17,7 @@ from .const import (
     EVENT_TYPE_KEY_REMOVED,
     EVENT_TYPE_LOCKED,
     EVENT_TYPE_UNLOCKED,
+    HA_PIN_NAME,
 )
 
 # Basic-AttrGroup(funcType 021) 페이로드는 "변경된 필드만" 부분갱신으로 오기도 함
@@ -110,7 +111,7 @@ def battery_raw_to_pct(raw: int | None) -> int | None:
     return 20
 
 
-def build_register_key(sid: str, tpid: str, pin_token: str, pin_name: str = "HA") -> tuple[str, dict[str, Any]]:
+def build_register_key(sid: str, tpid: str, pin_token: str, pin_name: str = HA_PIN_NAME) -> tuple[str, dict[str, Any]]:
     """HA 전용 영구 NFC 키 등록(func 408). 딱 1회만 호출 — pin_token 은 이후 매 unlock 에서 재사용.
 
     같은 pin_token 으로 재등록하는 건 PROTOCOL.md §9 가 "미검증"이라고 경고한 영역이라, 호출측

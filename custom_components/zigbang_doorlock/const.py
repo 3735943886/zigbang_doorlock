@@ -15,6 +15,11 @@ CONF_LOCKS = "locks"
 
 DEFAULT_RELAY_PORT = 9883
 
+# HA 전용 영구 unlock pin에 항상 붙이는 이름(build_register_key 기본값과 동일). 저장된 토큰이
+# entry.data와 안 맞아도 이 이름의 pin이 락에 이미 있으면 그 토큰을 채택해서 재사용한다 —
+# 안 그러면 재시작마다 새 토큰을 만들어서 매번 새 pin이 쌓인다(실측 확인된 버그, 2026-08-20).
+HA_PIN_NAME = "HA"
+
 # 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
 # last_access, last_method, last_user_name, last_event_at, last_pin_id
 

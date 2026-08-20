@@ -135,6 +135,12 @@ class RelayClient:
         trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
 
+    def adopt_token(self, tpid: str, pin_token: str) -> None:
+        """락에 이미 등록돼있는(이름=HA_PIN_NAME) pin을 REST로 새로 발견했을 때 호출 — 새로
+        등록하는 대신 그 토큰을 그대로 갈아끼운다. __init__.py 참조."""
+        self._ha_pin_tokens[tpid] = pin_token
+        self._registered.add(tpid)
+
     async def ensure_registered(self, tpid: str) -> None:
         """REST 재조회(수동 새로고침 버튼)로 이 tpId 의 HA pin 이 락에서 안 보이면 호출 —
         이미 등록 확인된 상태면 아무것도 안 하고, 아니면 지금 바로 등록(408)만 보낸다
