@@ -25,7 +25,8 @@ add-on으로 띄운 경우 observer 포트(기본 9883)가 기본적으로 host�
 설정 → 기기 및 서비스 → 통합 구성요소 추가 → "Zigbang Doorlock"
 
 1. **직방 계정**: 아이디/비밀번호/IMEI(선택, 비우면 자동생성 후 고정 저장). 등록된 도어락 목록을
-   가져오는 데 **1회만** 쓰입니다 — 이후 재로그인하지 않습니다.
+   가져오는 데 씁니다. 이후 상시 폴링은 안 하지만, **HA(재)시작마다 1회** pin 레지스트리(카드/지문
+   등 등록정보) 갱신을 위해 다시 로그인합니다 — 아래 "열림 방식 세분화" 참조.
 2. **relay 서버**: observer 포트의 host:port. 나중에 relay가 이사가면 통합구성요소 옵션에서
    계정 재인증 없이 host/port만 수정 가능합니다.
 
@@ -44,19 +45,29 @@ add-on으로 띄운 경우 observer 포트(기본 9883)가 기본적으로 host�
 
 ### 열림 방식(`last_method`) 세분화
 
-`IDPEVENT`(622) 자체엔 `pinType`이 없지만, `pinId`는 있고 `Basic-AttrGroup`이 흘려주는
-`pinInfoXXX` 레지스트리(pinId→pinType/pinName)와 대조하면 그 자리에서 풀립니다 — 이것도 relay
-observer(9883) 평문 JSON 안에 다 있는 정보라 별도 TLS 분석이 필요 없습니다(공식앱도 같은 방식으로
-"지문"/"카드" 등을 표시함, PROTOCOL.md §9-1/§10 및 실측 fixture로 검증).
+`IDPEVENT`(622) 자체엔 `pinType`이 없지만 `pinId`는 있고, `pinId → pinType/pinName` 레지스트리와
+대조하면 풀립니다(공식앱도 같은 방식, PROTOCOL.md §9-1/§10). 이 레지스트리는 **두 경로로** 채웁니다:
 
-다만 `access=="RFC"`(카드/키패드/지문 등 외부 물리인증)인 경우만 이 레지스트리 조회를 적용합니다:
+1. **REST(`v20/doorlockctrl/getdoorkeys`, 실계정으로 실측 검증됨)** — HA 시작마다 1회, 등록된
+   pin 전체(카드/지문/임시키 등)를 한 번에 받습니다. **필수 경로**입니다 — relay observer는 tap이라
+   HA가 뜨기 전 트래픽은 못 보는데, 실측 로그 확인 결과 `pinInfoXXX`는 세션 부트스트랩에도 항상
+   오는 게 아니라 그 슬롯이 등록/터치될 때만 개별로 오고, **실제 카드 언락 순간에도 안 실려있던
+   사례**가 있어서 relay 관찰만으론 사실상 영구히 못 채워질 수 있습니다.
+2. **relay observer의 `Basic-AttrGroup` push** — 위 REST 이후 새로 등록/변경된 슬롯을 보조적으로
+   반영(재시작 없이도 최신 유지).
+
+REST 호출이 실패해도(계정 문제, 네트워크 등) lock/battery/rssi 등 핵심 기능은 relay로 그대로
+동작하고, `last_method`/`last_user_name`만 `external`(대분류)로 폴백합니다.
+
+`access=="RFC"`(카드/키패드/지문 등 외부 물리인증)일 때만 이 레지스트리 조회를 적용합니다:
 - `SVR`(원격열림): pinId가 원격열림용 임시 NFC키(HA 자신의 injection 포함)를 가리켜서 pinType이
   항상 NFC로 나옴 — 실제 구현 detail일 뿐이라 `remote`로 고정.
 - `AUTO`/`INDOOR`: pinId가 실측상 항상 `0`(MST, 필러값)이라 진짜 자격증명이 아님.
 
 `RFC`일 때만 `last_method`가 `keytag`/`fingerprint`/`keypad` 등으로 세분화되고, 등록시 이름을
-지정해뒀다면 `last_user_name`도 채워집니다. 레지스트리가 아직 동기화 전(HA 갓 재시작 등)이거나
-낯선 pinId면 `external`로 폴백합니다.
+지정해뒀다면 `last_user_name`에 그 이름이 그대로 채워집니다(예: 실계정 테스트에서 카드에 등록된
+실명이 그대로 노출됨 확인 — 로그북/히스토리에 남으니 원치 않으면 `event.*_activity`/`lock.*` 쪽
+`pin_name`/`last_user_name` 속성을 대시보드에서 안 보이게 가리는 걸 권장).
 
 ## 알려진 제한
 

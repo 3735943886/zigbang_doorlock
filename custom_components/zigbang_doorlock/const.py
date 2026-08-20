@@ -42,6 +42,7 @@ PIN_TYPE_LABELS: dict[str, str] = {
     "VCE": "voice",
     "BLE": "bluetooth",
     "FCE": "face",
+    "SDK": "temp_key",  # TempKeyListViewModel(임시키 목록화면)에서만 쓰는 타입 — 추정
 }
 
 # IDPEVENT msgCategory 622(잠금상태변경)의 access -> event_type

@@ -1,11 +1,18 @@
-"""직방 클라우드 REST — config_flow 에서 1회(로그인+도어락목록조회)만 씀.
+"""직방 클라우드 REST — config_flow 에서 도어락목록 조회, async_setup_entry 에서 pin 레지스트리
+시드(딱 1회성 REST 호출들, 상시연결/폴링 아님) — 지속 상태갱신/제어는 여전히 relay_client.py
+(로컬 relay observer)가 전담(iot_class: local_push).
 
-이후 런타임 상태/제어는 relay_client.py(로컬 relay observer)가 전담 — 여기 있는 클라이언트는
-async_setup_entry 이후 유지되지 않는다(iot_class: local_push).
+pin 레지스트리를 매 시작마다 REST로 다시 받는 이유: relay observer 는 tap 이라 HA 가 구독하기
+전에 지나간 트래픽은 못 봄인데, 실측 로그(private/logs/*ocpdataBus*.txt)로 확인해보니
+pinInfoXXX(어떤 pinId 가 지문/카드/키패드 중 뭔지)는 세션 부트스트랩때도 항상 오는 게 아니라
+그 슬롯이 등록/터치될 때만 개별적으로 옴 — 실제 카드 언락 순간에도 안 실려있던 케이스 있음.
+패시브 관찰만으론 사실상 영구히 못 채워질 수 있어 REST 로 직접 받는다.
 
 엔드포인트/hashData 필드순서는 ../zigbang/src/lib.rs 의 `cloud::fetch`(Rust, provision용으로
 이미 실기검증됨) 및 zigbang_doorlock_pyscript(zb_auth)와 동일 — 서버가 hashData 를
 "dict 값 삽입순서 그대로 concat 후 SHA512" 로 검증하므로 순서를 반드시 지켜야 함.
+getdoorkeys 는 실캡처엔 없고 앱 APK 디컴파일(INetworkService.java, GetDoorLockKeysResponse/
+PinInfo 모델)로 확인 — PROTOCOL.md 가 채택한 것과 동일한 증거등급(jadx 디컴파일).
 """
 from __future__ import annotations
 
@@ -127,6 +134,33 @@ class ZigbangCloudClient:
                 }
             )
         return [lock for lock in locks if lock["tp_id"]]
+
+    async def fetch_pin_registry(self, device_id: str) -> dict[int, dict[str, Any]]:
+        """등록된 pinId -> {pin_type, pin_name}. 앱이 지문/RF카드/임시키 화면마다 pinTypes 를
+        나눠 부르는 것(RFCardListViewModel="RFC", FingerprintListViewModel="FGP",
+        TempKeyListViewModel="MST,NFC,NUM,RFC,SDK")과 달리 한 번에 다 받으려고 전부 나열."""
+        if self._member_id is None:
+            await self.login()
+
+        params = {
+            "memberId": self._member_id,
+            "deviceId": device_id,
+            "pinTypes": "MST,NFC,NUM,RFC,FGP,SDK,RMC,VCE,BLE,FCE",
+            "createDate": _timestamp(),
+            "hashData": "",
+        }
+        data = await self._request("GET", "v20/doorlockctrl/getdoorkeys", params=params)
+
+        registry: dict[int, dict[str, Any]] = {}
+        for pin in data.get("pinInfos", []) or []:
+            pin_id = pin.get("pinId")
+            if pin_id is None:
+                continue
+            registry[pin_id] = {
+                "pin_type": pin.get("pinType"),
+                "pin_name": pin.get("pinName") or pin.get("pinMemberNm") or None,
+            }
+        return registry
 
     async def _request(self, method: str, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         try:

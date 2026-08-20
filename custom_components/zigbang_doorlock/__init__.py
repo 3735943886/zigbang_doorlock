@@ -1,7 +1,14 @@
 """Zigbang Doorlock 통합 구성요소.
 
-클라우드(id/pw/imei)는 config_flow 에서 도어락 목록을 얻을 때 1회만 쓰고, 런타임 상태갱신/제어는
-전부 ../zigbang 로컬 relay 의 observer 포트를 통해 push 로 처리한다(iot_class: local_push).
+락 상태갱신/제어는 ../zigbang 로컬 relay 의 observer 포트를 통해 push 로 처리한다
+(iot_class: local_push) — 클라우드는 상시 폴링하지 않는다.
+
+단, pin 레지스트리(pinId->지문/카드/키패드 등 어떤 자격증명인지)만은 매 async_setup_entry 마다
+REST 로 한 번씩 새로 받는다: relay observer 는 tap 이라 HA 가 뜨기 전 트래픽은 못 보고, 실측
+로그(private/logs/*ocpdataBus*.txt, ../zigbang) 확인 결과 pinInfoXXX 는 세션 부트스트랩에도
+항상 오는 게 아니라 그 슬롯이 등록/터치될 때만 개별적으로 오며 실제 카드 언락 순간에도 안 실려있던
+사례가 있었다 — 패시브 관찰만으론 사실상 영구히 못 채워질 수 있어 api.py 를 통해 직접 받는다
+(REST 실패해도 lock/battery/rssi 등 핵심기능은 relay 로 그대로 동작 — 아래 try/except).
 """
 from __future__ import annotations
 
@@ -12,9 +19,23 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import ACCESS_LABELS, CONF_HOST, CONF_LOCKS, CONF_PORT, DOMAIN, PIN_TYPE_LABELS, PLATFORMS, SIGNAL_EVENT
+from .api import ZigbangCloudClient
+from .const import (
+    ACCESS_LABELS,
+    CONF_HOST,
+    CONF_IMEI,
+    CONF_LOCKS,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_USERNAME,
+    DOMAIN,
+    PIN_TYPE_LABELS,
+    PLATFORMS,
+    SIGNAL_EVENT,
+)
 from .coordinator import ZigbangCoordinator
 from .protocol import extract_basic_attrgroup_patch, extract_idpevent, extract_pin_registry_patch
 from .relay_client import RelayClient
@@ -29,13 +50,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     locks: list[dict[str, Any]] = entry.data[CONF_LOCKS]
     locks_by_tpid = {lock["tp_id"]: lock for lock in locks}
 
+    initial_registries = await _fetch_initial_pin_registries(hass, entry, locks_by_tpid)
+
     coordinator = ZigbangCoordinator(hass, entry.entry_id)
     coordinator.data = {
         tp_id: {
             "locked": lock.get("locked"),
             "battery_raw": lock.get("battery_raw"),
             "rssi": None,
-            "pin_registry": {},
+            "pin_registry": initial_registries.get(tp_id, {}),
             "last_access": None,
             "last_method": None,
             "last_user_name": None,
@@ -79,6 +102,26 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _fetch_initial_pin_registries(
+    hass: HomeAssistant, entry: ConfigEntry, locks_by_tpid: dict[str, dict[str, Any]]
+) -> dict[str, dict[int, dict[str, Any]]]:
+    """모듈 docstring 참조 — 실패해도 빈 dict 로 degrade, 핵심기능(lock/sensor)엔 영향 없음."""
+    client = ZigbangCloudClient(
+        async_get_clientsession(hass),
+        entry.data[CONF_USERNAME],
+        entry.data[CONF_PASSWORD],
+        entry.data[CONF_IMEI],
+    )
+    registries: dict[str, dict[int, dict[str, Any]]] = {}
+    try:
+        await client.login()
+        for tp_id, lock in locks_by_tpid.items():
+            registries[tp_id] = await client.fetch_pin_registry(lock["device_id"])
+    except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
+        _LOGGER.warning("pin 레지스트리 시딩 실패(카드/지문 등 세분화는 안 되지만 나머지는 정상 동작): %s", err)
+    return registries
 
 
 def _relay_target(entry: ConfigEntry) -> tuple[str, int]:
