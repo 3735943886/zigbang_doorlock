@@ -11,6 +11,11 @@ HA 통합구성요소와 완전히 독립적으로 실행 가능 — 표준 라�
   python3 helper/manage_pins.py --id ID delete --pin-id 5 --relay-host 10.10.1.5 --sid CB00000000 --yes
 
 비밀번호는 인자로 주면 쉘 히스토리/프로세스 목록에 남으니, 인자를 생략하면 프롬프트로 물어봄.
+
+IMEI는 계정당 고정돼야 함 — 로그인마다 바뀌면 클라우드가 "새 기기"로 인식해서 그 기기용
+NFC pin을 자동 발급해버림(실측 확인, 2026-08-21: list만 반복 실행해도 매번 pin이 하나씩 쌓임).
+그래서 --imei를 생략하면 최초 실행 시 1회 생성해서 이 스크립트 옆의 .manage_pins_imei.json 에
+로그인ID별로 캐싱해두고 이후 실행에서 재사용한다.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ import argparse
 import getpass
 import hashlib
 import json
+import random
 import subprocess
 import sys
 import time
@@ -25,10 +31,44 @@ import urllib.parse
 import urllib.request
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 BASE_URL = "https://iot.samsung-ihp.com:8088/openhome/"
 PIN_TYPES = "MST,NFC,NUM,RFC,FGP,SDK,RMC,VCE,BLE,FCE"
+IMEI_CACHE_PATH = Path(__file__).parent / ".manage_pins_imei.json"
+
+
+def generate_imei() -> str:
+    """Luhn 체크섬을 만족하는 15자리 랜덤 IMEI(custom_components/.../api.py의 generate_imei와 동일 로직 —
+    이 스크립트는 HA와 독립적으로 돌아가야 해서 import 대신 복제)."""
+    digits = [random.randint(0, 9) for _ in range(14)]
+    checksum = 0
+    for i, digit in enumerate(digits):
+        if (i + 1) % 2 == 0:
+            doubled = digit * 2
+            checksum += doubled if doubled < 10 else doubled - 9
+        else:
+            checksum += digit
+    digits.append((10 - (checksum % 10)) % 10)
+    return "".join(map(str, digits))
+
+
+def cached_imei(login_id: str) -> str:
+    cache: dict[str, str] = {}
+    if IMEI_CACHE_PATH.exists():
+        try:
+            cache = json.loads(IMEI_CACHE_PATH.read_text())
+        except (ValueError, OSError):
+            cache = {}
+    if login_id in cache:
+        return cache[login_id]
+    imei = generate_imei()
+    cache[login_id] = imei
+    IMEI_CACHE_PATH.write_text(json.dumps(cache, indent=2))
+    print(f"(참고: 이 계정용 IMEI를 새로 생성해 {IMEI_CACHE_PATH} 에 저장했습니다. "
+          f"다음 실행부터는 이 값을 재사용합니다.)", file=sys.stderr)
+    return imei
 
 
 def sha512(s: str) -> str:
@@ -197,7 +237,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--id", required=True, help="직방 로그인 ID")
     parser.add_argument("--password", help="직방 비밀번호(생략시 프롬프트로 입력)")
-    parser.add_argument("--imei", default=None, help="생략시 랜덤값 사용(1회성 조회/삭제엔 문제없음)")
+    parser.add_argument("--imei", default=None,
+                        help="생략시 계정별로 1회 생성 후 .manage_pins_imei.json 에 캐싱해 재사용 "
+                             "(매번 새 값을 쓰면 클라우드가 새 기기로 인식해 pin을 자동 발급함)")
 
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="등록된 pin 목록 조회(REST만, relay 불필요)")
@@ -218,7 +260,7 @@ def main() -> None:
     if not args.password:
         args.password = getpass.getpass("직방 비밀번호: ")
     if not args.imei:
-        args.imei = str(uuid.uuid4()).upper()
+        args.imei = cached_imei(args.id)
 
     if args.command == "list":
         cmd_list(args)

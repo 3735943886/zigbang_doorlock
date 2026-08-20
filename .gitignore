@@ -3,3 +3,4 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+helper/.manage_pins_imei.json
