@@ -14,13 +14,12 @@ from typing import Any
 
 import aiomqtt
 
-from .protocol import build_unlock_sequence
+from .protocol import build_register_key, build_trigger_unlock
 
 _LOGGER = logging.getLogger(__name__)
 
 _RECONNECT_INTERVAL = 15
-_UNLOCK_STEP_DELAY = 0.4  # 등록→트리거 사이(락이 pin을 반영할 시간)
-_CLEANUP_DELAY = 2.0  # 정리(func 420)는 결과 무관 나중에 호출해도 무해(PROTOCOL.md §9-3)
+_REGISTER_SETTLE_DELAY = 1.0  # 영구키 등록(1회성)→트리거 사이, 락이 pin을 반영할 시간
 
 OnMessage = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
@@ -36,6 +35,8 @@ class RelayClient:
         port: int,
         tracked_tpids: set[str],
         on_message: OnMessage,
+        ha_pin_tokens: dict[str, str],
+        already_registered: set[str],
     ) -> None:
         self._host = host
         self._port = port
@@ -44,6 +45,11 @@ class RelayClient:
         self._client: aiomqtt.Client | None = None
         self._sid_by_tpid: dict[str, str] = {}
         self._stop = asyncio.Event()
+        # tpId -> 이 통합구성요소 전용 영구 NFC 키 토큰(config_flow/__init__.py 에서 1회 생성,
+        # entry.data 에 영구저장). 매 unlock 마다 새로 안 만들고 이걸 계속 재사용한다.
+        self._ha_pin_tokens = ha_pin_tokens
+        # REST(getdoorkeys)로 이미 등록 확인된 tpId 집합 — 여기 없는 애만 첫 unlock 때 등록(408)부터.
+        self._registered = set(already_registered)
 
     async def run(self) -> None:
         """상시 재연결 루프. hass.async_create_background_task 등으로 백그라운드 실행."""
@@ -95,7 +101,9 @@ class RelayClient:
         await client.publish(topic, payload=json.dumps(payload).encode(), qos=0)
 
     async def async_unlock(self, tpid: str) -> None:
-        """원격열림 3단계 시퀀스 실행. 정리(3단계)는 백그라운드로 넘기고 즉시 반환."""
+        """영구 HA 키로 열림. 등록 안 확인된 tpId 만 이번 호출에서 먼저 등록(1회성)하고,
+        그 이후로는 매번 트리거(407)만 보낸다 — 등록/삭제를 반복하던 예전 방식보다 단순하고,
+        pin 슬롯이 매번 쌓이는 문제도 구조적으로 없다."""
         sid = self._sid_by_tpid.get(tpid)
         if sid is None:
             raise RelayUnlockError(
@@ -103,18 +111,13 @@ class RelayClient:
                 "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
             )
 
-        sequence = build_unlock_sequence(sid, tpid)
-        (reg_topic, reg_payload), (trg_topic, trg_payload), (clean_topic, clean_payload) = sequence
+        pin_token = self._ha_pin_tokens[tpid]
 
-        await self.publish(reg_topic, reg_payload)
-        await asyncio.sleep(_UNLOCK_STEP_DELAY)
+        if tpid not in self._registered:
+            reg_topic, reg_payload = build_register_key(sid, tpid, pin_token)
+            await self.publish(reg_topic, reg_payload)
+            await asyncio.sleep(_REGISTER_SETTLE_DELAY)
+            self._registered.add(tpid)
+
+        trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
-
-        async def _cleanup() -> None:
-            await asyncio.sleep(_CLEANUP_DELAY)
-            try:
-                await self.publish(clean_topic, clean_payload)
-            except RelayUnlockError:
-                pass  # 연결이 끊겼으면 정리는 포기 — 열림 자체엔 영향 없음(PROTOCOL.md §9-3)
-
-        asyncio.ensure_future(_cleanup())

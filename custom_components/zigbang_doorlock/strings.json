@@ -76,6 +76,11 @@
           }
         }
       }
+    },
+    "button": {
+      "refresh_pin_registry": {
+        "name": "Refresh pin registry"
+      }
     }
   }
 }

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "zigbang_doorlock"
-PLATFORMS = ["lock", "sensor", "event"]
+PLATFORMS = ["lock", "sensor", "event", "button"]
 
 MANUFACTURER = "Zigbang (Samsung SDS IHP)"
 

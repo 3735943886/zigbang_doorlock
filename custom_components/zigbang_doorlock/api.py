@@ -159,6 +159,9 @@ class ZigbangCloudClient:
             registry[pin_id] = {
                 "pin_type": pin.get("pinType"),
                 "pin_name": pin.get("pinName") or pin.get("pinMemberNm") or None,
+                # 원본 pin 토큰값 — HA 자신의 영구키가 이미 등록돼있는지 내부적으로 대조하는 용도로만
+                # 쓰고(__init__.py) 절대 엔티티/속성으로 노출하지 않는다(민감한 자격증명 값).
+                "pin_token": pin.get("pin"),
             }
         return registry
 

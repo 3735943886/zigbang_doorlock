@@ -110,17 +110,15 @@ def battery_raw_to_pct(raw: int | None) -> int | None:
     return 20
 
 
-def build_unlock_sequence(sid: str, tpid: str) -> list[tuple[str, dict[str, Any]]]:
-    """원격열림 3단계 시퀀스(등록→트리거→정리) 생성. PROTOCOL.md §9 그대로.
+def build_register_key(sid: str, tpid: str, pin_token: str, pin_name: str = "HA") -> tuple[str, dict[str, Any]]:
+    """HA 전용 영구 NFC 키 등록(func 408). 딱 1회만 호출 — pin_token 은 이후 매 unlock 에서 재사용.
 
-    반환: [(topic, payload_dict), ...] — 순서대로 publish. 마지막(정리)은 결과 무관 fire-and-forget 가능.
+    같은 pin_token 으로 재등록하는 건 PROTOCOL.md §9 가 "미검증"이라고 경고한 영역이라, 호출측
+    (relay_client.py)에서 "아직 등록 안 됐다고 확인된 경우"에만 불러야 한다.
     """
     topic = f"ocp/{sid}/{tpid}"
-    pin = secrets.token_hex(8)  # 16-hex, 매회 신규 발급(재사용시 락 pin슬롯 충돌 여지 — 실측상 권장 안 됨)
-    now = datetime.now()
-    start = now.strftime("%Y-%m-%d %H:%M")
-
-    register = {
+    start = datetime.now().strftime("%Y-%m-%d %H:%M")
+    payload = {
         "version": "1.0",
         "msgType": "Q",
         "funcType": "030",
@@ -141,8 +139,8 @@ def build_unlock_sequence(sid: str, tpid: str) -> list[tuple[str, dict[str, Any]
             "arg": {
                 "pinType": "NFC",
                 "pinSort": "PMT",
-                "pinName": "HA Unlock",
-                "pin": pin,
+                "pinName": pin_name,
+                "pin": pin_token,
                 "pinStatus": "NOR",
                 "start": start,
                 "end": "2999-12-31 00:00",
@@ -152,8 +150,13 @@ def build_unlock_sequence(sid: str, tpid: str) -> list[tuple[str, dict[str, Any]
             },
         },
     }
+    return topic, payload
 
-    trigger = {
+
+def build_trigger_unlock(sid: str, tpid: str, pin_token: str) -> tuple[str, dict[str, Any]]:
+    """등록된 영구 pin_token 으로 열림 트리거(func 407). 매 unlock 마다 이것만 재사용."""
+    topic = f"ocp/{sid}/{tpid}"
+    payload = {
         "version": "1.0",
         "msgType": "Q",
         "funcType": "030",
@@ -169,29 +172,9 @@ def build_unlock_sequence(sid: str, tpid: str) -> list[tuple[str, dict[str, Any]
         "severity": "0",
         "encType": "0",
         # authToken 필드 자체를 안 보냄(실캡처 그대로 — 생략이 맞음, PROTOCOL.md §9-2)
-        "data": {"func": 407, "arg": {"locked": False, "pin": pin, "access": "SVR"}, "from": pin},
+        "data": {"func": 407, "arg": {"locked": False, "pin": pin_token, "access": "SVR"}, "from": pin_token},
     }
-
-    cleanup = {
-        "version": "1.0",
-        "msgType": "Q",
-        "funcType": "030",
-        "sId": sid,
-        "tpId": tpid,
-        "tId": tpid,
-        "msgCode": "MSGBA0300001",
-        "msgId": str(uuid.uuid4()),
-        "msgDate": _now_ms(),
-        "resCode": "",
-        "resMsg": "",
-        "dataFormat": "application/json",
-        "severity": "0",
-        "encType": "0",
-        "authToken": "",
-        "data": {"func": 420, "arg": {"pin": pin}},
-    }
-
-    return [(topic, register), (topic, trigger), (topic, cleanup)]
+    return topic, payload
 
 
 def _now_ms() -> int:

@@ -42,6 +42,16 @@ add-on으로 띄운 경우 observer 포트(기본 9883)가 기본적으로 host�
 | `sensor.<name>_battery_raw` | 배터리 원본값(진단, 기본 비활성) |
 | `sensor.<name>_rssi` | Wi-Fi 신호세기(dBm, 진단) |
 | `event.<name>_activity` | 잠금/열림/키등록/키삭제 이산 이벤트. `access`/`pin_id`/`pin_type`/`pin_name` 속성 포함 |
+| `button.<name>_refresh_pin_registry` | pin 레지스트리 즉시 새로고침(진단). 앱에서 pin 이름만 바꾸는 등 relay로 절대 안 보이는 변경 반영용 |
+
+### 원격 열림 방식 — 영구 HA 키 1개
+
+락을 열 때마다 임시키를 등록→삭제하는 대신, **이 통합구성요소 전용 NFC 키를 최초 1회만 등록**해두고
+(pin 토큰은 config 시 생성되어 `entry.data`에 영구저장) 이후 모든 unlock은 그 키로 트리거(func 407)만
+보냅니다. 등록/삭제를 매번 반복하지 않으므로 pin 슬롯이 쌓이는 문제가 구조적으로 없습니다(실기
+테스트 중 등록만 되고 삭제가 안 된 임시키가 실제로 남았던 걸 확인 후 이 방식으로 전환했습니다 —
+`helper/manage_pins.py`가 그때 만든 정리용 도구입니다). HA가 시작될 때마다 REST로 이 영구키가 아직
+등록돼있는지 확인하고, 없으면(최초 실행, 혹은 앱에서 수동 삭제된 경우) 자동으로 다시 등록합니다.
 
 ### 열림 방식(`last_method`) 세분화
 
@@ -77,3 +87,8 @@ REST 호출이 실패해도(계정 문제, 네트워크 등) lock/battery/rssi �
 - **배터리 %는 추정치**: 도어락이 보고하는 raw 값은 선형 % 가 아니라 임계값 기반 코드에 가까워
   보입니다(`sensor.*_battery_raw`로 원본값 확인 가능). `zigbang_doorlock_pyscript`와 동일한 매핑을
   사용했습니다.
+
+## helper/
+
+HA와 무관하게 독립 실행되는 정리용 CLI. `helper/manage_pins.py`로 등록된 pin 조회/삭제 가능
+(표준 라이브러리 + mosquitto_pub/mosquitto_sub만 필요) — 자세한 건 `helper/README.md` 참조.
