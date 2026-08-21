@@ -45,11 +45,11 @@ relay는 **Docker 컨테이너**(HA와 같은 머신일 필요 없음, host:port
 | 엔티티 | 설명 |
 |---|---|
 | `lock.<name>` | 잠금상태 + 원격열림. `last_access`/`last_method`/`last_user_name`/`last_event_at` 속성 포함 |
-| `sensor.<name>_battery` | 배터리 %(추정치, 아래 참조) |
-| `sensor.<name>_battery_raw` | 배터리 원본값(진단, 기본 비활성) |
+| `sensor.<name>_battery` | 배터리 %(보정값) |
+| `sensor.<name>_battery_raw` | 배터리 원본값(진단) |
 | `sensor.<name>_rssi` | Wi-Fi 신호세기(dBm, 진단) |
-| `event.<name>_activity` | 잠금/열림/키등록/키삭제 이산 이벤트. `access`/`pin_id`/`pin_type`/`pin_name` 속성 포함 |
-| `button.<name>_refresh_pin_registry` | pin 레지스트리 즉시 새로고침(진단). 앱에서 pin 이름만 바꾸는 등 relay로 절대 안 보이는 변경 반영용 |
+| `event.<name>_activity` | 잠금/열림/키등록/키삭제 이벤트. `access`/`pin_id`/`pin_type`/`pin_name` 속성 포함 |
+| `button.<name>_refresh_pin_registry` | pin 레지스트리 즉시 새로고침(진단). 앱에서 pin 이름만 바꾸는 등 relay로 안 보이는 변경 반영용 |
 
 ### 원격 열림 방식 — 영구 HA 키 1개
 
