@@ -1,0 +1,105 @@
+{
+  "_comment": "직방 도어락 응답규칙. Rust 엔 프로토콜 문자열 0줄 — 전부 여기(DESIGN.md). 필드순서는 서버 ack와 byte-identical 하게 유지(preserve_order).",
+
+  "rules": [
+    {
+      "name": "ack-func021",
+      "when": { "msgType": "Q", "funcType": "021" },
+      "mode": "preempt",
+      "respond": {
+        "topic": "ocp/{sId}/{tpId}",
+        "qos": 1,
+        "json": {
+          "version": "{version}",
+          "msgType": "A",
+          "funcType": "{funcType}",
+          "sId": "{sId}",
+          "tpId": "{tpId}",
+          "tId": "{tId}",
+          "msgCode": "MSGBA0210002",
+          "msgId": "{msgId}",
+          "msgDate": "{now_ms}",
+          "resCode": "200",
+          "resMsg": "",
+          "dataFormat": "application/json",
+          "severity": "0",
+          "encType": "0",
+          "authToken": "{authToken}"
+        }
+      }
+    }
+  ],
+
+  "record": [
+    {
+      "name": "keysync",
+      "when": { "msgCode": "MSGBA0300001" },
+      "key": "keysync/{data.arg.pinType}/{data.arg.pinName}"
+    }
+  ],
+
+  "on_local_inject": [
+    {
+      "name": "local-unlock-mirror",
+      "when": { "match": { "data.func": "407", "data.arg.locked": "false" } },
+      "respond": {
+        "topic": "ocp/dataBus",
+        "qos": 1,
+        "json": {
+          "version": "001",
+          "msgType": "Q",
+          "funcType": "021",
+          "sId": "{sId}",
+          "tpId": "{tpId}",
+          "tId": "{tId}",
+          "msgCode": "IDPEVENT",
+          "msgId": "{uuid}",
+          "msgDate": "{now_ms}",
+          "resCode": "",
+          "dataFormat": "application/json",
+          "severity": "0",
+          "encType": "0",
+          "authToken": "{authToken}",
+          "data": {
+            "locked": false,
+            "access": "RFC",
+            "pinId": 0,
+            "pin": "",
+            "count": 0,
+            "msgCategory": 622,
+            "testing": false,
+            "mode": 0,
+            "zoneId": 1,
+            "eventId": "{now_ms}622",
+            "from": ""
+          }
+        }
+      }
+    }
+  ],
+
+  "on_session_start_local": [
+    {
+      "topic": "ocp/{sId}/{tpId}",
+      "qos": 1,
+      "json": {
+        "version": "001",
+        "msgType": "A",
+        "funcType": "002",
+        "sId": "{sId}",
+        "tpId": "{tpId}",
+        "tId": "{tId}",
+        "msgCode": "MSGAUTH00003",
+        "msgId": "{uuid}",
+        "msgDate": "{now_ms}",
+        "resCode": "200",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "authToken": "{authToken}",
+        "data": { "authToken": "{authToken}", "encType": "0" }
+      }
+    }
+  ]
+}

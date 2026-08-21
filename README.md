@@ -6,9 +6,16 @@
 
 ## 사전준비
 
-`zigbang` relay 데몬이 이미 떠있어야 합니다(systemd/Docker/HA add-on 중 택1, 별도 저장소). HA
-add-on으로 띄운 경우 observer 포트(기본 9883)가 기본적으로 host에 안 열려있으니 같은 docker
-네트워크 안에서 컨테이너명으로 접근하거나, 필요시 직접 포트를 열어주세요.
+`zigbang-relay` 데몬(락↔클라우드 로컬 중계)이 먼저 떠있어야 합니다. **도메인/인증서 준비 →
+relay 띄우기(Docker 또는 HA App) → 도어락 리셋 → 재프로비저닝**까지 전 과정을 이 저장소만
+보고 따라할 수 있도록 [RELAY_SETUP.md](RELAY_SETUP.md)에 처음부터 끝까지 정리해뒀습니다 —
+relay는 **Docker 컨테이너**(HA와 같은 머신일 필요 없음, host:port만 아래 설정에 입력) 또는
+**HA App(Add-on)**, 편한 쪽으로 띄우면 됩니다. Docker 이미지는
+[Docker Hub](https://hub.docker.com/r/3735943886/zigbang-relay)에 공개돼있고, 컨테이너에
+필요한 설정 파일은 [`docker/`](docker/)에 들어있습니다.
+
+`provision`/`relay` 바이너리와 add-on 저장소는 [zigbang_relay](https://github.com/3735943886/zigbang_relay)
+에서 받습니다(공개, 로그인 불필요).
 
 ## 설치
 

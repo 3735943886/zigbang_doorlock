@@ -1,0 +1,32 @@
+# zigbang-relay(Docker) 설정 예시. 컨테이너 안 WORKDIR은 /data이고 모든 경로는 그 기준
+# 상대경로다 — 이 파일을 /opt/zigbang-relay/relay.toml로 복사한 뒤, ← 표시된 값만 실제
+# 값으로 바꾸면 된다. 자세한 설명: ../RELAY_SETUP.md
+
+log_level = "info"                 # error|warn|info|debug|trace
+observer = "0.0.0.0:9883"          # 평문 MQTT 관찰/명령 포트 — 로컬신뢰망 전용, 절대 인터넷에 노출 금지
+rules_file = "rules.json"
+replay_store = "state/replay.json"
+log_dir = "logs"
+
+cert_file = "certs/fullchain.pem"
+cert_key  = "certs/privkey.pem"
+cert_name = "relay.example.com"    # ← 실제로 발급받은 도메인으로 변경
+upstream_insecure = true           # 실클라우드로 나갈 때 그쪽 cert는 검증 안 함(낮은 우선순위 기술부채)
+
+answered_ttl_secs = 120
+answered_cap = 8192
+reconnect_secs = 15
+
+[[route]]
+name = "mqtts"
+proto = "mqtts"
+mode = "proxy"                     # proxy(순수 통과+관찰, 안전한 기본값) | shadow | decloud
+listen = "0.0.0.0:18883"
+upstream = "broker.vendor.example:8883"     # ← 실제 직방 클라우드 MQTTS 호스트로 변경
+
+[[route]]
+name = "holepunch"
+proto = "udp"
+mode = "proxy"
+listen = "0.0.0.0:5683"
+upstream = "brokerudp.vendor.example:5683"  # ← 실제 직방 클라우드 UDP 홀펀치 호스트로 변경
