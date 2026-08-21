@@ -18,7 +18,11 @@ DEFAULT_RELAY_PORT = 9883
 # HA 전용 영구 unlock pin에 항상 붙이는 이름(build_register_key 기본값과 동일). 저장된 토큰이
 # entry.data와 안 맞아도 이 이름의 pin이 락에 이미 있으면 그 토큰을 채택해서 재사용한다 —
 # 안 그러면 재시작마다 새 토큰을 만들어서 매번 새 pin이 쌓인다(실측 확인된 버그, 2026-08-20).
-HA_PIN_NAME = "HA"
+# "HA"처럼 짧은 이름은 클라우드가 자동 발급하는 다른 종류의 키(예: 새 기기 로그인 시
+# 자동 프로비저닝되는 편의키)와 이름이 겹칠 위험이 있고, 이름으로 채택(adopt)하는 로직이
+# 그 중 아무거나 골라버리면 실제 동작하는 키 대신 엉뚱한 걸 채택해 unlock이 조용히 깨질 수
+# 있다(실측 확인, 2026-08-21). 그래서 우연히 겹칠 가능성이 낮은 이름을 쓴다.
+HA_PIN_NAME = "ZBDL-HA-KEY"
 
 # 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
 # last_access, last_method, last_user_name, last_event_at, last_pin_id
@@ -28,9 +32,14 @@ HA_PIN_NAME = "HA"
 # RFC=카드/키태그, FGP=지문, MST=마스터/번호코드). __init__.py는 이걸 하드코딩된 access 허용목록이
 # 아니라 "레지스트리[pinId].pinType == access" 매칭으로 판정한다 — 그래서 여기 없는 새 access
 # 코드가 나와도(아는 pinType이기만 하면) 코드 수정 없이 자동으로 세분화된다. 이 딕셔너리는 매칭이
-# 안 되는 경우(SVR/AUTO/INDOOR/MNU/RMC, 레지스트리 미동기화, 진짜 미상 코드 등)의 폴백 라벨이고,
+# 안 되는 경우(AUTO/INDOOR/MNU/RMC, 레지스트리 미동기화, 진짜 미상 코드 등)의 폴백 라벨이고,
 # 없는 키는 access 원본 문자열 그대로 노출한다(ACCESS_LABELS.get(access, access)) — 미상 값도
 # last_method/event.access attribute에 그대로 남아서 안 씹힌다.
+#
+# SVR은 위 매칭에서 예외 처리한다(__init__.py 참조) — pinType과 같을 수 없는 값(원격 트리거
+# 채널을 뜻함)인데도 pinId/pin은 실제 등록된 키를 정확히 가리키는 게 실측 확인됨(2026-08-21).
+# 그래서 method는 "remote"로 두되 pin_name은 레지스트리에서 채운다 — 이걸 안 하면 HA 자신이
+# 트리거한 unlock(사실상 이 통합구성요소로 여는 모든 경우)이 전부 이름 unknown으로 떨어진다.
 ACCESS_LABELS: dict[str, str] = {
     "SVR": "remote",
     "INDOOR": "indoor",

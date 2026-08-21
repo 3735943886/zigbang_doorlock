@@ -283,9 +283,21 @@ def _handle_relay_message(
             # 레지스트리의 pinType이 이번 이벤트의 access와 일치할 때만 그 자격증명으로 확정한다.
             # access 값 자체가 대부분 pinType 코드와 동일하게 오므로(실측 2026-08-20: RFC=카드/키태그,
             # FGP=지문, MST=마스터/번호코드) 이 매칭 하나로 하드코딩된 access 허용목록 없이도 지금 아는
-            # 코드는 물론 앞으로 나올 새 코드까지 커버된다. 불일치(SVR의 임시키 구현detail, RMC/AUTO/
-            # INDOOR처럼 pinId가 다른 슬롯을 가리키거나 필러인 경우 등)는 자연스럽게 폴백으로 빠진다.
-            if pin_info and pin_info.get("pin_type") == access:
+            # 코드는 물론 앞으로 나올 새 코드까지 커버된다. 불일치(RMC/AUTO/INDOOR처럼 pinId가 다른
+            # 슬롯을 가리키거나 필러인 경우 등)는 자연스럽게 폴백으로 빠진다.
+            #
+            # SVR은 예외: "무슨 자격증명이냐"가 아니라 "원격으로 열렸다"는 채널을 뜻하는 값이라
+            # pinType과 애초에 같을 수가 없다(실측 2026-08-21: HA가 등록해둔 영구 NFC 키로 407
+            # 트리거하면 access="SVR", pinId/pin은 그 키의 진짜 값 그대로 옴 — 캡처에서 pin 필드가
+            # 등록시 값과 정확히 일치해 확인). 예전엔 이걸 "임시키라 못 믿는다"고 오판해서 SVR 오픈은
+            # 전부 unknown으로 떨어졌었는데, pinId 자체는 신뢰 가능한 걸로 실측 확인됐다 — method는
+            # 그대로 "remote"로 두고(실제로 원격 트리거니까) name/pin_type만 레지스트리에서 채운다.
+            if pin_info and access == "SVR":
+                patch["last_method"] = ACCESS_LABELS.get(access, access)
+                patch["last_user_name"] = pin_info.get("pin_name")
+                event["pin_type"] = pin_info.get("pin_type")
+                event["pin_name"] = pin_info.get("pin_name")
+            elif pin_info and pin_info.get("pin_type") == access:
                 patch["last_method"] = PIN_TYPE_LABELS.get(access, access)
                 patch["last_user_name"] = pin_info.get("pin_name")
                 event["pin_type"] = access
