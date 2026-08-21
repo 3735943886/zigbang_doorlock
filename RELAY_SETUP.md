@@ -11,8 +11,8 @@ relay는 **Docker 컨테이너** 또는 **HA App(Add-on)**, 둘 중 편한 쪽�
 |---|---|---|
 | 어디에 뜨는가 | 아무 리눅스 머신(HA와 같은 머신 아니어도 됨) | HA(HAOS/Supervised) 안 |
 | 설치 방법 | `docker run` | Supervisor → 앱 스토어 → 저장소 추가 |
-| 설정 파일 위치 | 원하는 호스트 디렉터리 | add-on 데이터 폴더(`/data`) |
-| 인증서 준비 | certbot 등으로 직접 발급 | 커뮤니티 "Let's Encrypt" add-on 연동 권장(HAOS 표준 `/ssl` 경로 자동 인식) |
+| 설정 파일 위치 | 원하는 호스트 디렉터리 | app 데이터 폴더(`/data`) |
+| 인증서 준비 | certbot 등으로 직접 발급 | 커뮤니티 "Let's Encrypt" app 연동 권장(HAOS 표준 `/ssl` 경로 자동 인식) |
 | observer(9883) 노출 | 방화벽으로 직접 통제해야 함 | 기본적으로 host에 안 열림(HA 내부망에서만) |
 
 > relay/provision 바이너리와 Docker 이미지는 [`zigbang_relay`](https://github.com/3735943886/zigbang_relay)
@@ -59,10 +59,10 @@ sudo certbot certonly --standalone -d relay.example.com   # 실제 도메인으�
 가져다 씁니다. **자동 갱신**은 5단계 이후에 설정하는 걸 권장합니다(대상 경로가 먼저 있어야
 갱신 훅이 그 자리에 복사할 수 있음).
 
-> **HA App(Add-on)으로 띄울 거라면 이 단계 대신 커뮤니티 "Let's Encrypt" add-on 사용을
+> **HA App(Add-on)으로 띄울 거라면 이 단계 대신 커뮤니티 "Let's Encrypt" app 사용을
 > 권장합니다** — 아래 [5-B](#5-b-ha-appadd-on으로-띄우기)에서 설명. HAOS엔 보통 certbot을
-> 직접 돌릴 셸이 없기도 하고, add-on 쪽이 HA 표준 경로(`/ssl/`)에 자동으로 인증서를 놓아줘서
-> 이 relay add-on이 별도 설정 없이 바로 읽어갑니다.
+> 직접 돌릴 셸이 없기도 하고, app 쪽이 HA 표준 경로(`/ssl/`)에 자동으로 인증서를 놓아줘서
+> 이 relay app이 별도 설정 없이 바로 읽어갑니다.
 
 ## 3. 도메인이 relay까지 실제로 접속되는지 확인
 
@@ -90,12 +90,12 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 전용 엔드포인트"입니다. 기존 HA 리버스프록시에 얹으면 그 프록시가 이미 노출하고 있는
 공격 표면에 도어락 제어 경로까지 얹는 셈이라, 최소한:
 - `observer`(9883, 평문 무인증 포트)는 **절대** 리버스프록시나 인터넷에 노출하지 말 것 —
-  로컬신뢰망에서만 접근 가능하게 방화벽으로 막아야 합니다(add-on으로 띄우면 기본적으로
+  로컬신뢰망에서만 접근 가능하게 방화벽으로 막아야 합니다(app으로 띄우면 기본적으로
   host에 안 열려서 이 항목이 자동으로 해결됨).
 - `18883`(MQTTS)/`5683`(UDP) 스트림 전달용 포트만 최소한으로 열고, 가능하면 소스 IP 제한
   (도어락이 실제로 나가는 IP만 허용) 등 프록시단 접근제어를 추가로 고려하세요.
 
-## 5. relay 띄우기 — Docker 또는 Add-on
+## 5. relay 띄우기 — Docker 또는 App(Add-on)
 
 ### 5-A. Docker로 띄우기
 
@@ -182,31 +182,31 @@ https://github.com/3735943886/zigbang_relay
 
 #### 5-B-2. rules.json 배치
 
-add-on 데이터 폴더(`/data` — Samba 공유나 File editor add-on으로 접근)에 이 저장소의
+app 데이터 폴더(`/data` — Samba 공유나 File editor app으로 접근)에 이 저장소의
 `docker/rules.json`을 그대로 복사합니다:
 ```
 /data/rules.json  ← docker/rules.json과 동일 내용
 ```
-**mtime 핫리로드**라 나중에 갱신해도 add-on 재시작이 필요 없습니다.
+**mtime 핫리로드**라 나중에 갱신해도 app 재시작이 필요 없습니다.
 
 #### 5-B-3. 인증서
 
-**커뮤니티 "Let's Encrypt" add-on을 같이 설치**하는 걸 권장합니다 — 그 add-on이 발급한
+**커뮤니티 "Let's Encrypt" app을 같이 설치**하는 걸 권장합니다 — 그 app이 발급한
 인증서는 HA 표준 공유경로(`/ssl/fullchain.pem`+`/ssl/privkey.pem`)에 떨어지고, 이 relay
-add-on은 그 경로를 읽기전용으로 이미 기본 설정돼있어(`cert_file`/`cert_key` 기본값)
-**추가 설정 없이 바로 반영**됩니다. 갱신도 mtime 핫리로드라 add-on 재시작 불필요.
+app은 그 경로를 읽기전용으로 이미 기본 설정돼있어(`cert_file`/`cert_key` 기본값)
+**추가 설정 없이 바로 반영**됩니다. 갱신도 mtime 핫리로드라 app 재시작 불필요.
 
-HAOS가 아니거나 `/ssl`을 안 쓰고 싶으면: add-on "구성" 탭에서 `cert_file`/`cert_key`를 원하는
+HAOS가 아니거나 `/ssl`을 안 쓰고 싶으면: app "구성" 탭에서 `cert_file`/`cert_key`를 원하는
 경로(예: `/data/certs/fullchain.pem`)로 바꾸고 2단계처럼 직접 발급한 인증서를 그 경로에 넣어도
 됩니다.
 
 #### 5-B-4. 옵션 설정
 
-add-on "구성" 탭에서 아래 값을 실제 값으로 채웁니다:
+app "구성" 탭에서 아래 값을 실제 값으로 채웁니다:
 - `cert_name` ← 1~2단계에서 준비한 실제 도메인
 - `route` 배열의 두 `upstream`(mqtts/holepunch) ← 실제 직방 클라우드 브로커 주소
 
-나머지는 기본값으로 충분합니다. 저장 후 add-on 재시작.
+나머지는 기본값으로 충분합니다. 저장 후 app 재시작.
 
 #### 5-B-5. 확인
 
@@ -329,7 +329,7 @@ SoftAP에 먼저 붙여놓고 실행하는 게 아닙니다(SoftAP는 보통 인
 편한 쪽으로:
 ```bash
 docker logs -f zigbang-relay          # Docker(5-A)
-# HA → 애드온 → Zigbang Doorlock Relay → 로그 탭  (Add-on, 5-B)
+# HA → 애드온 → Zigbang Doorlock Relay → 로그 탭  (App, 5-B)
 
 # 또는 observer 포트를 직접 tap(로컬신뢰망에서, 9883이 열려있는 경우):
 mosquitto_sub -h <relay-host> -p 9883 -t '#' -v
@@ -350,6 +350,6 @@ relay가 락 트래픽을 실제로 받고 있는 게 확인되면, 이제 이 �
 **relay 서버 host:port**를 입력합니다(`18883`이 아니라 관찰 포트인 `9883`):
 
 - **Docker(5-A)**로 띄웠다면 컨테이너를 실행한 호스트의 IP:9883
-- **Add-on(5-B)**으로 띄웠다면 기본적으로 HA 내부 도커망에서만 접근 가능합니다 — 같은 HA 안의
-  커스텀 컴포넌트는 문제 없이 닿지만, 정확한 내부 호스트명이 궁금하면 HA의 add-on 간 통신 관련
-  공식 문서를 참고하세요(add-on slug: `zigbang_relay`).
+- **App(5-B)**으로 띄웠다면 기본적으로 HA 내부 도커망에서만 접근 가능합니다 — 같은 HA 안의
+  커스텀 컴포넌트는 문제 없이 닿지만, 정확한 내부 호스트명이 궁금하면 HA의 app 간 통신 관련
+  공식 문서를 참고하세요(app slug: `zigbang_relay`).
