@@ -12,9 +12,10 @@ relay 띄우기(Docker 또는 HA App) → 도어락 리셋 → 재프로비저�
 relay는 **Docker 컨테이너**(HA와 같은 머신일 필요 없음, host:port만 아래 설정에 입력) 또는
 **HA App(Add-on)**, 편한 쪽으로 띄우면 됩니다. Docker 이미지는
 [Docker Hub](https://hub.docker.com/r/3735943886/zigbang-relay)에 공개돼있고, 컨테이너에
-필요한 설정 파일은 [`docker/`](docker/)에 들어있습니다.
+필요한 설정 파일은 [`docker/`](docker/)에 들어있습니다. 물론 바이너리를 직접 systemd등으로 띄워도
+됩니다.
 
-`provision`/`relay` 바이너리와 add-on 저장소는 [zigbang_relay](https://github.com/3735943886/zigbang_relay)
+`provision`/`relay` 바이너리와 app 저장소는 [zigbang_relay](https://github.com/3735943886/zigbang_relay)
 에서 받습니다(공개, 로그인 불필요).
 
 ## 설치
