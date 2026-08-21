@@ -14,7 +14,7 @@ from typing import Any
 
 import aiomqtt
 
-from .protocol import build_register_key, build_trigger_unlock, build_wake
+from .protocol import build_delete_key, build_register_key, build_trigger_unlock, build_wake
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class RelayClient:
         on_message: OnMessage,
         ha_pin_tokens: dict[str, str],
         already_registered: set[str],
+        registry_seed_ok: bool = True,
     ) -> None:
         self._host = host
         self._port = port
@@ -55,6 +56,11 @@ class RelayClient:
         # REST(getdoorkeys)로 이미 등록 확인된 tpId 집합 — 여기 없는 애는 락 트래픽이 처음
         # 관측되는 즉시(self-heal), 또는 첫 unlock/수동새로고침(ensure_registered) 때 등록(408)됨.
         self._registered = set(already_registered)
+        # HA 시작시 REST 시딩(__init__.py:_fetch_initial_pin_registries)이 실패해서 "락에 이미
+        # HA pin이 있는지" 자체를 확인 못한 상태인지 여부. False면 self-heal/lazy 등록이 락의
+        # 실제 상태를 모른 채 등록하는 거라 기존 키와 중복될 수 있다 — 이후 REST 조회가 성공하면
+        # (수동 새로고침 등) mark_registry_seed_ok로 갱신된다.
+        self._registry_seed_ok = registry_seed_ok
 
     async def run(self) -> None:
         """상시 재연결 루프. hass.async_create_background_task 등으로 백그라운드 실행."""
@@ -141,6 +147,33 @@ class RelayClient:
         self._ha_pin_tokens[tpid] = pin_token
         self._registered.add(tpid)
 
+    def mark_registry_seed_ok(self) -> None:
+        """REST 조회가 (재시작 이후 언젠가) 성공적으로 한 번이라도 끝나면 호출 — 그 뒤로는
+        self-heal/lazy 등록이 더 이상 "락 상태를 모른 채 등록한다"고 경고하지 않는다."""
+        self._registry_seed_ok = True
+
+    async def delete_pin(self, tpid: str, pin_token: str) -> None:
+        """지정한 pin_token을 락에서 삭제(func 420) — "HA 키 초기화" 버튼 전용. 등록(408)과
+        달리 이 저장소에서 실사용 검증된 적 없는 위험한 동작이라, 호출측(button.py)에서
+        REST로 정확히 확인한 pin_token만 넘겨야 한다."""
+        sid = self._sid_by_tpid.get(tpid)
+        if sid is None:
+            raise RelayUnlockError(
+                "아직 이 도어락의 세션 정보(sId)를 관측하지 못했습니다 — "
+                "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
+            )
+        topic, payload = build_delete_key(sid, tpid, pin_token)
+        await self.publish(topic, payload)
+        await asyncio.sleep(_REGISTER_SETTLE_DELAY)
+
+    def replace_ha_pin_token(self, tpid: str, new_token: str) -> None:
+        """"HA 키 초기화" 버튼이 기존 키들을 전부 지운 뒤, 새 토큰으로 교체하고 미등록 상태로
+        되돌린다 — 이후 ensure_registered를 부르면 이 새 토큰으로 다시 등록(408)된다. 이미
+        REST로 락 상태를 직접 확인한 뒤 부르는 거라 seed_ok도 같이 확정한다."""
+        self._ha_pin_tokens[tpid] = new_token
+        self._registered.discard(tpid)
+        self._registry_seed_ok = True
+
     async def ensure_registered(self, tpid: str) -> None:
         """REST 재조회(수동 새로고침 버튼)로 이 tpId 의 HA pin 이 락에서 안 보이면 호출 —
         이미 등록 확인된 상태면 아무것도 안 하고, 아니면 지금 바로 등록(408)만 보낸다
@@ -162,6 +195,14 @@ class RelayClient:
             _LOGGER.warning("HA pin 자동 재등록 실패(tpId=%s): %s", tpid, err)
 
     async def _register_now(self, tpid: str, sid: str) -> None:
+        if not self._registry_seed_ok:
+            # REST 시딩 실패 상태에서 등록하는 거라, 락에 이미 같은 이름의 키가 있었는지
+            # 확인할 방법이 없었다(로컬 우선 동작이 이 프로젝트의 핵심 전제라 REST가 안 될 때도
+            # 등록 자체는 그대로 진행한다) — 중복이면 다음 REST 조회 때 별도로 다시 경고한다.
+            _LOGGER.warning(
+                "REST로 기존 pin 목록을 확인하지 못한 상태에서 HA 키를 새로 등록합니다(tpId=%s) — "
+                "락에 이미 이 이름의 키가 있었다면 중복 등록일 수 있습니다.", tpid,
+            )
         pin_token = self._ha_pin_tokens[tpid]
         reg_topic, reg_payload = build_register_key(sid, tpid, pin_token)
         await self.publish(reg_topic, reg_payload)

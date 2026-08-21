@@ -80,6 +80,9 @@
     "button": {
       "refresh_pin_registry": {
         "name": "Refresh pin registry"
+      },
+      "reset_ha_pins": {
+        "name": "Reset HA key (danger)"
       }
     }
   }

@@ -155,6 +155,31 @@ def build_register_key(sid: str, tpid: str, pin_token: str, pin_name: str = HA_P
     return topic, payload
 
 
+def build_delete_key(sid: str, tpid: str, pin_token: str) -> tuple[str, dict[str, Any]]:
+    """등록된 pin 삭제(func 420). helper/manage_pins.py의 cmd_delete와 동일한 실캡처 기준 payload
+    (authToken 필드 자체 없음, resCode:"200") — button.py의 "HA 키 초기화" 버튼 전용, 위험도가
+    높아서(잘못 지정하면 엉뚱한 키가 지워짐) 호출측에서 pin_token을 정확히 골라 넘겨야 한다."""
+    topic = f"ocp/{sid}/{tpid}"
+    payload = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": str(uuid.uuid4()),
+        "msgDate": _now_ms(),
+        "resCode": "200",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "data": {"func": 420, "arg": {"pin": pin_token}},
+    }
+    return topic, payload
+
+
 def build_wake(sid: str, tpid: str) -> tuple[str, dict[str, Any]]:
     """func 508(arg 없음) — 실캡처(fixtures/r5c_publishes.jsonl #47-50/#65-68, 2026-08-20 실기기
     앱 unlock 실측)에서 트리거(407) 직전에 항상 먼저 오는 메시지. 이거 없이 407만 단독으로 보내면

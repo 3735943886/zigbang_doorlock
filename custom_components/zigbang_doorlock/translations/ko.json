@@ -80,6 +80,9 @@
     "button": {
       "refresh_pin_registry": {
         "name": "pin 레지스트리 새로고침"
+      },
+      "reset_ha_pins": {
+        "name": "HA 키 초기화 (위험)"
       }
     }
   }

@@ -54,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     locks_by_tpid = {lock["tp_id"]: lock for lock in locks}
     ha_pin_tokens = {tp_id: lock["ha_pin_token"] for tp_id, lock in locks_by_tpid.items()}
 
-    initial_registries, already_registered, adopted_tokens = await _fetch_initial_pin_registries(
+    initial_registries, already_registered, adopted_tokens, registry_seed_ok = await _fetch_initial_pin_registries(
         hass, entry, locks_by_tpid, ha_pin_tokens
     )
     if adopted_tokens:
@@ -93,6 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         on_message=on_message,
         ha_pin_tokens=ha_pin_tokens,
         already_registered=already_registered,
+        registry_seed_ok=registry_seed_ok,
     )
     relay_task = hass.loop.create_task(relay.run(), name=f"{DOMAIN}_relay_{entry.entry_id}")
 
@@ -158,23 +159,28 @@ async def _fetch_initial_pin_registries(
     entry: ConfigEntry,
     locks_by_tpid: dict[str, dict[str, Any]],
     ha_pin_tokens: dict[str, str],
-) -> tuple[dict[str, dict[int, dict[str, Any]]], set[str], dict[str, str]]:
+) -> tuple[dict[str, dict[int, dict[str, Any]]], set[str], dict[str, str], bool]:
     """모듈 docstring 참조 — 실패해도 빈 결과로 degrade, 핵심기능(lock/sensor)엔 영향 없음.
-    반환: (엔티티용 공개 레지스트리, HA 영구키가 이미 등록 확인된 tpId 집합, 채택된 토큰들).
+    반환: (엔티티용 공개 레지스트리, HA 영구키가 이미 등록 확인된 tpId 집합, 채택된 토큰들,
+    이 REST 시딩 자체가 성공했는지).
 
     entry.data 에 저장된 토큰이 락과 안 맞아도, 이름이 HA_PIN_NAME 인 pin이 이미 락에 있으면
     새로 등록하지 않고 그 토큰을 채택한다 — 안 그러면 재시작마다 새 토큰이 생겨서(entry.data
     저장이 안 됐거나 재구성된 경우 등) self-heal이 매번 새 pin을 쌓는다(실측 확인된 버그,
-    2026-08-20)."""
+    2026-08-20). 마지막 bool(seed_ok)이 False면 이 조회 자체가 실패한 거라, RelayClient의
+    self-heal/lazy 등록이 "락에 이미 이 이름의 키가 있었는지" 확인 없이 등록하게 된다 —
+    relay_client.py의 registry_seed_ok 참조."""
     public_registries: dict[str, dict[int, dict[str, Any]]] = {}
     already_registered: set[str] = set()
     adopted_tokens: dict[str, str] = {}
+    seed_ok = True
     try:
         client = _build_cloud_client(hass, entry)
         await client.login()
         for tp_id, lock in locks_by_tpid.items():
             raw = await client.fetch_pin_registry(lock["device_id"])
             public_registries[tp_id] = _strip_pin_tokens(raw)
+            _warn_if_duplicate_ha_pins(raw, tp_id)
             if _has_ha_pin(raw, ha_pin_tokens[tp_id]):
                 already_registered.add(tp_id)
                 continue
@@ -187,8 +193,9 @@ async def _fetch_initial_pin_registries(
                 adopted_tokens[tp_id] = existing["pin_token"]
                 already_registered.add(tp_id)
     except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
+        seed_ok = False
         _LOGGER.warning("pin 레지스트리 시딩 실패(카드/지문 등 세분화는 안 되지만 나머지는 정상 동작): %s", err)
-    return public_registries, already_registered, adopted_tokens
+    return public_registries, already_registered, adopted_tokens, seed_ok
 
 
 def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
@@ -197,6 +204,30 @@ def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
 
 def _find_named_pin(registry: dict[int, dict[str, Any]], pin_name: str) -> dict[str, Any] | None:
     return next((info for info in registry.values() if info.get("pin_name") == pin_name and info.get("pin_token")), None)
+
+
+def _find_all_named_pins(registry: dict[int, dict[str, Any]], pin_name: str) -> list[tuple[int, str]]:
+    """이름이 pin_name 인 pin 전부 -> [(pinId, pin_token), ...]. "HA 키 초기화" 버튼이
+    지울 대상을 정확히 고르는 용도(_find_named_pin 은 하나만 리턴해서 중복 청소엔 안 맞음)."""
+    return [
+        (pin_id, info["pin_token"])
+        for pin_id, info in registry.items()
+        if info.get("pin_name") == pin_name and info.get("pin_token")
+    ]
+
+
+def _warn_if_duplicate_ha_pins(registry: dict[int, dict[str, Any]], tp_id: str) -> None:
+    """REST로 락의 실제 pin 목록을 확인할 때마다 호출 — 이름이 HA_PIN_NAME인 pin이 2개
+    이상이면 경고만 하고 자동으로 지우지 않는다(삭제는 위험도가 높아서 "HA 키 초기화"
+    버튼으로 사람이 직접 눌러야만 실행됨, button.py 참조)."""
+    named = _find_all_named_pins(registry, HA_PIN_NAME)
+    if len(named) > 1:
+        _LOGGER.warning(
+            "이름이 %r인 pin이 %d개 있습니다(pinId=%s, tpId=%s) — REST 시딩 실패 중 self-heal이"
+            " 중복 등록했을 가능성이 있습니다. '%s 키 초기화' 버튼으로 정리하거나"
+            " helper/manage_pins.py로 직접 확인해서 정리하는 걸 권장합니다.",
+            HA_PIN_NAME, len(named), [pin_id for pin_id, _ in named], tp_id, HA_PIN_NAME,
+        )
 
 
 async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> None:
@@ -213,6 +244,8 @@ async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp
     await client.login()
     registry = await client.fetch_pin_registry(lock_info["device_id"])
     _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry))
+    relay.mark_registry_seed_ok()
+    _warn_if_duplicate_ha_pins(registry, tp_id)
 
     if _has_ha_pin(registry, lock_info["ha_pin_token"]):
         return
@@ -234,6 +267,43 @@ async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp
 
     _LOGGER.info("HA pin 이 락에 없어서 재등록합니다(tpId=%s)", tp_id)
     await relay.ensure_registered(tp_id)
+
+
+async def async_reset_ha_pins(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> int:
+    """"HA 키 초기화" 버튼(button.py, 기본 비활성화) 전용 — 이름이 HA_PIN_NAME인 pin을 락에서
+    전부 지우고 새 토큰으로 딱 하나만 재등록한다. 중복이 쌓였을 때 python을 직접 실행하기
+    어려운 환경(HAOS 등)에서도 HA 안에서 정리할 수 있게 하는 최후 수단이라 위험도가 높다:
+    - 지금 실제로 쓰이고 있는 키까지 포함해서 이름이 같은 건 전부 지운다(그래서 반드시
+      뒤이어 새 키를 등록까지 한다 — 지우기만 하고 끝나면 그 사이엔 unlock이 안 된다).
+    - 같은 토큰을 재등록하는 건 PROTOCOL.md §9가 미검증이라고 경고한 영역이라(protocol.py의
+      build_register_key 참조) 재사용하지 않고 새 토큰을 만든다.
+    반환값: 삭제한 pin 개수."""
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator: ZigbangCoordinator = data["coordinator"]
+    lock_info = data["locks"][tp_id]
+    relay: RelayClient = data["relay"]
+
+    client = _build_cloud_client(hass, entry)
+    await client.login()
+    registry = await client.fetch_pin_registry(lock_info["device_id"])
+    targets = _find_all_named_pins(registry, HA_PIN_NAME)
+
+    for _pin_id, pin_token in targets:
+        await relay.delete_pin(tp_id, pin_token)
+
+    new_token = secrets.token_hex(8)
+    new_lock_info = {**lock_info, "ha_pin_token": new_token}
+    data["locks"] = {**data["locks"], tp_id: new_lock_info}
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_LOCKS: list(data["locks"].values())}
+    )
+    relay.replace_ha_pin_token(tp_id, new_token)
+    await relay.ensure_registered(tp_id)
+
+    registry_after = await client.fetch_pin_registry(lock_info["device_id"])
+    _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry_after))
+
+    return len(targets)
 
 
 def _relay_target(entry: ConfigEntry) -> tuple[str, int]:
@@ -268,10 +338,9 @@ def _handle_relay_message(
         event = extract_idpevent(data, payload.get("msgDate"))
         if event is None:
             return
-        patch: dict[str, Any] = {"last_event_at": event.get("at"), "last_pin_id": event.get("pin_id")}
+        patch: dict[str, Any] = {"last_event_at": event.get("at")}
         if "locked" in event:
             patch["locked"] = event["locked"]
-            patch["last_access"] = event.get("access")
 
             access = event.get("access")
             pin_id = event.get("pin_id")
@@ -293,20 +362,31 @@ def _handle_relay_message(
             # 전부 unknown으로 떨어졌었는데, pinId 자체는 신뢰 가능한 걸로 실측 확인됐다 — method는
             # 그대로 "remote"로 두고(실제로 원격 트리거니까) name/pin_type만 레지스트리에서 채운다.
             if pin_info and access == "SVR":
-                patch["last_method"] = ACCESS_LABELS.get(access, access)
-                patch["last_user_name"] = pin_info.get("pin_name")
+                method = ACCESS_LABELS.get(access, access)
+                user_name = pin_info.get("pin_name")
                 event["pin_type"] = pin_info.get("pin_type")
                 event["pin_name"] = pin_info.get("pin_name")
             elif pin_info and pin_info.get("pin_type") == access:
-                patch["last_method"] = PIN_TYPE_LABELS.get(access, access)
-                patch["last_user_name"] = pin_info.get("pin_name")
+                method = PIN_TYPE_LABELS.get(access, access)
+                user_name = pin_info.get("pin_name")
                 event["pin_type"] = access
                 event["pin_name"] = pin_info.get("pin_name")
             else:
-                patch["last_method"] = ACCESS_LABELS.get(access, access)
-                patch["last_user_name"] = None
+                method = ACCESS_LABELS.get(access, access)
+                user_name = None
                 event["pin_type"] = None
                 event["pin_name"] = None
+
+            # 잠길 때(AUTO 자동재잠김/MNU 수동잠금 등)는 pinId가 대부분 필러라 method/name이
+            # 항상 unknown으로 나온다 — 그걸로 직전 unlock의 "누가/무엇으로 열었는지" 상태를
+            # 덮어쓰면 자동재잠김 한 번에 몇 초 만에 사라져서(실측 확인, 2026-08-21), 열릴 때
+            # (locked=False)만 이 상태들을 갱신한다. event 자체(활동기록 엔티티용, event.py)는
+            # 이 판별과 무관하게 이번 이벤트의 실제 결과를 그대로 담는다.
+            if not event["locked"]:
+                patch["last_access"] = access
+                patch["last_pin_id"] = pin_id
+                patch["last_method"] = method
+                patch["last_user_name"] = user_name
 
         _merge_state(coordinator, tp_id, patch)
         async_dispatcher_send(hass, SIGNAL_EVENT.format(entry_id, tp_id), event)
