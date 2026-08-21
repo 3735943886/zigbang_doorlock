@@ -58,7 +58,6 @@ class ZigbangLock(ZigbangEntity, LockEntity):
         except RelayUnlockError as err:
             raise HomeAssistantError(str(err)) from err
 
-        # 낙관적 갱신 — 확정 상태는 relay 가 tap 하는 IDPEVENT(622)로 곧 다시 들어옴.
-        new_data = dict(self.coordinator.data)
-        new_data[self._tp_id] = {**new_data.get(self._tp_id, {}), "locked": False}
-        self.coordinator.async_set_updated_data(new_data)
+        # 낙관적 갱신 없음 — 트리거 publish 가 성공해도 락이 실제로 열렸다는 보장은 아니라서
+        # (예: resCode 400으로 거절돼도 publish 자체는 성공), 상태는 relay 가 tap 하는
+        # 실제 IDPEVENT(622)/Basic-AttrGroup 로 locked=false 가 들어올 때만 바뀐다.
