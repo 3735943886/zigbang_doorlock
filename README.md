@@ -1,7 +1,7 @@
 # Zigbang Doorlock (Home Assistant)
 
-직방(삼성SDS IHP) 스마트 도어락을 Home Assistant에 연동하는 커스텀 컴포넌트.
-클라우드 폴링이 아니라 `zigbang` 로컬 relay(observer 포트)를 확인해서 상태를 갱신하고,
+직방(삼성SDS) 스마트 도어락을 Home Assistant에 연동하는 커스텀 컴포넌트.
+클라우드 폴링이 아니라 `zigbang` 로컬 relay 서버(observer 포트)를 확인해서 상태를 갱신하고,
 원격 열림도 클라우드 REST가 아니라 relay를 통해 로컬로 주입합니다.
 
 ## 사전준비
