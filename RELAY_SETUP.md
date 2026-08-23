@@ -125,7 +125,7 @@ sudo install -m 0640 /etc/letsencrypt/live/relay.example.com/privkey.pem   /opt/
 | 경로 | 무엇인가 | 어떻게 생기나 |
 |---|---|---|
 | `relay.toml` | 설정 파일 | `docker/relay.toml.example` 복사 후 값 채움 |
-| `rules/*.rhai` | 메시지 응답 규칙(Rhai 스크립트) | `docker/rules/` 그대로 복사 |
+| `rules/*.rhai` | 메시지 응답 규칙 | `docker/rules/` 그대로 복사 |
 | `certs/fullchain.pem`, `certs/privkey.pem` | TLS 인증서 | 2단계에서 발급 |
 | `state/replay.json` | 재생 캐시(장애 대응용) | 자동 생성, 미리 안 만들어도 됨 |
 | `logs/` | relay 로그 | 자동 생성 |
