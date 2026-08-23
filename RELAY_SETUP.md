@@ -118,9 +118,8 @@ sudo install -m 0640 /etc/letsencrypt/live/relay.example.com/privkey.pem   /opt/
 
 `/opt/zigbang-relay/relay.toml`을 열어 `cert_name`(← 실제 발급받은 도메인)과 두 `upstream`
 (실제 직방 클라우드 브로커 주소)을 채워넣습니다. `rules/`는 그대로 두면 됩니다 — 락↔클라우드
-메시지에 어떻게 응답할지 정하는 [Rhai](https://rhai.rs) 스크립트 디렉터리로(안의 `*.rhai`를
-파일명 알파벳순으로 전부 불러 씀), **mtime 감시로 핫리로드**되므로 나중에 갱신해도 컨테이너
-재시작이 필요 없습니다.
+메시지에 어떻게 응답할지 정하는 스크립트 디렉터리로(안의 `*.rhai`를 파일명 알파벳순으로 전부 불러 씀),
+**mtime 감시로 핫리로드**되므로 나중에 갱신해도 컨테이너 재시작이 필요 없습니다.
 
 | 경로 | 무엇인가 | 어떻게 생기나 |
 |---|---|---|
