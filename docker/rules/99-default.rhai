@@ -1,4 +1,4 @@
-// 직방 도어락 응답규칙(default/fallback) — zigbang_relay 저장소의 rules/99-default.rhai와 동일 내용.
+// 직방 도어락 응답규칙(default/fallback)
 // 파일명 99- 라서 다른 규칙파일들보다 항상 나중에 검사됨(우선순위 최저).
 
 // 락→클라우드 Q(021=IDPEVENT류) 는 항상 로컬에서 200 ack 로 선응답(health 무관 — 서버가 살아있어도
