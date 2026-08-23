@@ -71,8 +71,13 @@ def cached_imei(login_id: str) -> str:
     return imei
 
 
-def sha512(s: str) -> str:
+def protocol_sha512(s: str) -> str:
     return hashlib.sha512(s.encode()).hexdigest()
+
+
+def hash_password_for_login(password: str) -> str:
+    """서버 로그인 프로토콜이 요구하는 비밀번호 해시 형식."""
+    return protocol_sha512(password)
 
 
 def timestamp() -> str:
@@ -106,9 +111,9 @@ def login(username: str, password: str, imei: str) -> tuple[str, str, str]:
         "apiVer": "v20", "authNumber": "", "countryCd": "KR", "locale": "ko_KR",
         "locationAgreeYn": "N", "mobileNum": "", "osVer": "13", "overwrite": True,
         "pushToken": "", "timeZone": tz, "appVer": app_ver, "osTypeCd": os_type_cd,
-        "createDate": timestamp(), "loginId": username, "pwd": sha512(password), "imei": imei,
+        "createDate": timestamp(), "loginId": username, "pwd": hash_password_for_login(password), "imei": imei,
     }
-    body["hashData"] = sha512("".join(str(v) for v in body.values()))
+    body["hashData"] = protocol_sha512("".join(str(v) for v in body.values()))
     resp = request("PUT", "v10/user/login", body=body)
     if not resp.get("result"):
         sys.exit(f"로그인 실패: {resp.get('message') or resp}")
