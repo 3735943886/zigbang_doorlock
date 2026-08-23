@@ -4,7 +4,7 @@
 
 log_level = "info"                 # error|warn|info|debug|trace
 observer = "0.0.0.0:9883"          # 평문 MQTT 관찰/명령 포트 — 로컬신뢰망 전용, 절대 인터넷에 노출 금지
-rules_file = "rules.json"
+rules_file = "rules"                # 디렉터리(안의 *.rhai 전부 파일명순, 뒤로 정렬될 이름=낮은 우선순위)
 replay_store = "state/replay.json"
 log_dir = "logs"
 

@@ -18,7 +18,7 @@ relay는 **Docker 컨테이너** 또는 **HA App(Add-on)**, 둘 중 편한 쪽�
 > relay/provision 바이너리와 Docker 이미지는 [`zigbang_relay`](https://github.com/3735943886/zigbang_relay)
 > 저장소에서 배포합니다(공개 저장소, 로그인 없이 [Releases](https://github.com/3735943886/zigbang_relay/releases)에서
 > 바로 다운로드 가능). Docker 이미지는 [Docker Hub](https://hub.docker.com/r/3735943886/zigbang-relay)에서
-> pull하고, 컨테이너를 띄우는 데 필요한 설정 파일(`rules.json`, `relay.toml.example`)은 이 저장소의
+> pull하고, 컨테이너를 띄우는 데 필요한 설정 파일(`rules/`, `relay.toml.example`)은 이 저장소의
 > [`docker/`](docker/)에 그대로 들어있습니다 — 이 문서 + `docker/`만 있으면 relay 배포는 완결됩니다.
 
 ## 전체 흐름
@@ -107,8 +107,8 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 ```bash
 mkdir -p /opt/zigbang-relay/certs /opt/zigbang-relay/state /opt/zigbang-relay/logs
 
-# 이 저장소에 이미 들어있는 설정 파일 두 개를 복사
-cp docker/rules.json /opt/zigbang-relay/rules.json
+# 이 저장소에 이미 들어있는 설정 파일들을 복사
+cp -r docker/rules /opt/zigbang-relay/rules
 cp docker/relay.toml.example /opt/zigbang-relay/relay.toml
 
 # 2단계에서 발급받은 인증서 복사
@@ -117,14 +117,15 @@ sudo install -m 0640 /etc/letsencrypt/live/relay.example.com/privkey.pem   /opt/
 ```
 
 `/opt/zigbang-relay/relay.toml`을 열어 `cert_name`(← 실제 발급받은 도메인)과 두 `upstream`
-(실제 직방 클라우드 브로커 주소)을 채워넣습니다. `rules.json`은 그대로 두면 됩니다 — 락↔클라우드
-메시지에 어떻게 응답할지 정하는 규칙 파일로, **mtime 감시로 핫리로드**되므로 나중에 갱신해도
-컨테이너 재시작이 필요 없습니다.
+(실제 직방 클라우드 브로커 주소)을 채워넣습니다. `rules/`는 그대로 두면 됩니다 — 락↔클라우드
+메시지에 어떻게 응답할지 정하는 [Rhai](https://rhai.rs) 스크립트 디렉터리로(안의 `*.rhai`를
+파일명 알파벳순으로 전부 불러 씀), **mtime 감시로 핫리로드**되므로 나중에 갱신해도 컨테이너
+재시작이 필요 없습니다.
 
 | 경로 | 무엇인가 | 어떻게 생기나 |
 |---|---|---|
 | `relay.toml` | 설정 파일 | `docker/relay.toml.example` 복사 후 값 채움 |
-| `rules.json` | 메시지 응답 규칙 | `docker/rules.json` 그대로 복사 |
+| `rules/*.rhai` | 메시지 응답 규칙(Rhai 스크립트) | `docker/rules/` 그대로 복사 |
 | `certs/fullchain.pem`, `certs/privkey.pem` | TLS 인증서 | 2단계에서 발급 |
 | `state/replay.json` | 재생 캐시(장애 대응용) | 자동 생성, 미리 안 만들어도 됨 |
 | `logs/` | relay 로그 | 자동 생성 |
@@ -180,12 +181,12 @@ https://github.com/3735943886/zigbang_relay
 ```
 "Zigbang Doorlock Relay" 검색 후 설치.
 
-#### 5-B-2. rules.json 배치
+#### 5-B-2. rules/ 배치
 
 app 데이터 폴더(`/data` — Samba 공유나 File editor app으로 접근)에 이 저장소의
-`docker/rules.json`을 그대로 복사합니다:
+`docker/rules/`를 그대로 복사합니다:
 ```
-/data/rules.json  ← docker/rules.json과 동일 내용
+/data/rules/  ← docker/rules/와 동일 내용
 ```
 **mtime 핫리로드**라 나중에 갱신해도 app 재시작이 필요 없습니다.
 
