@@ -25,7 +25,7 @@ DEFAULT_RELAY_PORT = 9883
 HA_PIN_NAME = "ZBDL-HA-KEY"
 
 # 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
-# last_access, last_method, last_user_name, last_event_at, last_pin_id
+# last_access, last_method, last_user_name, last_pin_id, last_unlock_at
 
 # IDPEVENT(622)의 access -> 대분류 라벨. 카드/지문/마스터코드 등 실제 자격증명으로 열린 경우엔
 # access 값 자체가 아래 PIN_TYPE_LABELS 코드와 동일하게 온다(실측 2026-08-20 relay tap 확인:

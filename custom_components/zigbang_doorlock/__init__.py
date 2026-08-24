@@ -75,8 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "last_access": None,
             "last_method": None,
             "last_user_name": None,
-            "last_event_at": None,
             "last_pin_id": None,
+            "last_unlock_at": None,
         }
         for tp_id, lock in locks_by_tpid.items()
     }
@@ -338,7 +338,7 @@ def _handle_relay_message(
         event = extract_idpevent(data, payload.get("msgDate"))
         if event is None:
             return
-        patch: dict[str, Any] = {"last_event_at": event.get("at")}
+        patch: dict[str, Any] = {}
         if "locked" in event:
             patch["locked"] = event["locked"]
 
@@ -387,6 +387,7 @@ def _handle_relay_message(
                 patch["last_pin_id"] = pin_id
                 patch["last_method"] = method
                 patch["last_user_name"] = user_name
+                patch["last_unlock_at"] = event.get("at")
 
         _merge_state(coordinator, tp_id, patch)
         async_dispatcher_send(hass, SIGNAL_EVENT.format(entry_id, tp_id), event)

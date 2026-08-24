@@ -49,7 +49,7 @@ class ZigbangLock(ZigbangEntity, LockEntity):
             "last_access": state.get("last_access"),
             "last_method": state.get("last_method"),
             "last_user_name": state.get("last_user_name"),
-            "last_event_at": state.get("last_event_at"),
+            "last_unlock_at": state.get("last_unlock_at"),
         }
 
     async def async_unlock(self, **kwargs: Any) -> None:

@@ -44,7 +44,7 @@ relay는 **Docker 컨테이너**(HA와 같은 머신일 필요 없음, host:port
 
 | 엔티티 | 설명 |
 |---|---|
-| `lock.<name>` | 잠금상태 + 원격열림. `last_access`/`last_method`/`last_user_name`/`last_event_at` 속성 포함 |
+| `lock.<name>` | 잠금상태 + 원격열림. `last_access`/`last_method`/`last_user_name`/`last_unlock_at` 속성 포함(전체 이벤트 기록은 `event.*_activity` 참조) |
 | `sensor.<name>_battery` | 배터리 %(보정값) |
 | `sensor.<name>_battery_raw` | 배터리 원본값(진단) |
 | `sensor.<name>_rssi` | Wi-Fi 신호세기(dBm, 진단) |
