@@ -19,11 +19,12 @@ from .protocol import build_delete_key, build_register_key, build_trigger_unlock
 _LOGGER = logging.getLogger(__name__)
 
 _RECONNECT_INTERVAL = 15
-_REGISTER_SETTLE_DELAY = 1.0  # 영구키 등록(1회성)→트리거 사이, 락이 pin을 반영할 시간
-# wake(508)→트리거(407) 사이 지연. 실캡처(앱)에서는 클라우드 왕복 지연 때문에 자연스럽게
-# 이 정도 간격이 생기는데, 우리는 로컬 relay라 딜레이 없이 바로 붙여보내면 락이 508을 아직
-# 처리 중일 때 407이 도착해서 resCode 400으로 거절당함(실측 확인) — 그 간격을 흉내낸다.
-_WAKE_SETTLE_DELAY = 0.5
+# funcType 030 Q(408 등록/420 삭제/508 wake) 완료 ACK 대기 상한. 실캡처(fixtures/
+# r5c_publishes.jsonl #1-2, #47-50/#65-68, #77-80, #89-90)에서 매번 락이 funcType 030/
+# msgCode MSGBA0300002 로 같은 msgId를 실어 ACK를 보내고(359ms~1.18초 실측), 앱은 다음
+# 명령을 이 ACK 이후에만 보낸다 — 고정 딜레이가 아니라 ACK 자체를 기다리는 것. 이 타임아웃은
+# qos0라 ACK가 유실됐을 때의 안전판일 뿐, 정상 경로에서는 ACK가 오는 즉시 진행된다.
+_ACK_TIMEOUT = 1.5
 
 OnMessage = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
@@ -50,6 +51,8 @@ class RelayClient:
         self._client: aiomqtt.Client | None = None
         self._sid_by_tpid: dict[str, str] = {}
         self._stop = asyncio.Event()
+        # msgId -> 응답(funcType 030 A/MSGBA0300002) 대기용 future. publish_and_wait_ack 참조.
+        self._pending_acks: dict[str, asyncio.Future[dict[str, Any]]] = {}
         # tpId -> 이 통합구성요소 전용 영구 NFC 키 토큰(config_flow/__init__.py 에서 1회 생성,
         # entry.data 에 영구저장). 매 unlock 마다 새로 안 만들고 이걸 계속 재사용한다.
         self._ha_pin_tokens = ha_pin_tokens
@@ -106,6 +109,13 @@ class RelayClient:
                 # (예: 사용자가 앱에서 HA 키를 직접 지웠거나 락이 초기화된 경우 대비)
                 await self._self_heal_registration(tpid, sid)
 
+        # 락→클라우드 funcType 030 A(msgCode MSGBA0300002)는 우리가 보낸 Q(508/407/408/420)의
+        # 완료 ACK — 같은 msgId로 되돌아온다(실캡처 확인). publish_and_wait_ack가 기다리는 중이면 깨운다.
+        if payload.get("msgType") == "A" and payload.get("funcType") == "030":
+            fut = self._pending_acks.get(payload.get("msgId"))
+            if fut is not None and not fut.done():
+                fut.set_result(payload)
+
         result = self._on_message(tpid, payload)
         if asyncio.iscoroutine(result):
             await result
@@ -115,6 +125,24 @@ class RelayClient:
         if client is None:
             raise RelayUnlockError("relay observer 에 연결돼있지 않습니다")
         await client.publish(topic, payload=json.dumps(payload).encode(), qos=0)
+
+    async def _publish_and_wait_ack(self, topic: str, payload: dict[str, Any], timeout: float = _ACK_TIMEOUT) -> None:
+        """publish 후 같은 msgId로 오는 funcType 030 A(MSGBA0300002) ACK을 기다린다.
+
+        qos0라 ACK이 유실될 수 있으니 timeout은 강제 대기가 아니라 안전판 — 응답이 안 오면
+        경고만 남기고 그냥 진행한다(예전 고정 sleep과 동일한 최악의 경우 동작)."""
+        msg_id = payload["msgId"]
+        func = payload.get("data", {}).get("func")
+        fut: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        self._pending_acks[msg_id] = fut
+        try:
+            await self.publish(topic, payload)
+            try:
+                await asyncio.wait_for(fut, timeout)
+            except asyncio.TimeoutError:
+                _LOGGER.warning("func %s ACK 타임아웃(msgId=%s, %.1fs) — 응답 없이 진행", func, msg_id, timeout)
+        finally:
+            self._pending_acks.pop(msg_id, None)
 
     async def async_unlock(self, tpid: str) -> None:
         """영구 HA 키로 열림. 등록 안 확인된 tpId 만 이번 호출에서 먼저 등록(1회성)하고,
@@ -134,9 +162,9 @@ class RelayClient:
 
         # func 508(빈 arg)을 407 직전에 항상 먼저 보내야 함 — 실캡처 확인, protocol.py의
         # build_wake 참조. 이거 빠뜨리면 publish 자체는 성공해도 락이 407을 무시해서 안 열림.
+        # 508의 완료 ACK(같은 msgId로 옴)를 기다린 뒤에 407을 보낸다 — 실캡처 순서 그대로.
         wake_topic, wake_payload = build_wake(sid, tpid)
-        await self.publish(wake_topic, wake_payload)
-        await asyncio.sleep(_WAKE_SETTLE_DELAY)
+        await self._publish_and_wait_ack(wake_topic, wake_payload)
 
         trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
@@ -163,8 +191,7 @@ class RelayClient:
                 "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
             )
         topic, payload = build_delete_key(sid, tpid, pin_token)
-        await self.publish(topic, payload)
-        await asyncio.sleep(_REGISTER_SETTLE_DELAY)
+        await self._publish_and_wait_ack(topic, payload)
 
     def replace_ha_pin_token(self, tpid: str, new_token: str) -> None:
         """"HA 키 초기화" 버튼이 기존 키들을 전부 지운 뒤, 새 토큰으로 교체하고 미등록 상태로
@@ -205,6 +232,5 @@ class RelayClient:
             )
         pin_token = self._ha_pin_tokens[tpid]
         reg_topic, reg_payload = build_register_key(sid, tpid, pin_token)
-        await self.publish(reg_topic, reg_payload)
-        await asyncio.sleep(_REGISTER_SETTLE_DELAY)
+        await self._publish_and_wait_ack(reg_topic, reg_payload)
         self._registered.add(tpid)
