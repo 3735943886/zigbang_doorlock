@@ -1,0 +1,22 @@
+name: Release
+
+# v로 시작하는 태그가 push되면(git tag vX.Y.Z && git push origin vX.Y.Z) 그 태그로
+# GitHub Release를 자동 생성한다 — 이전엔 태그 push 후 별도로 `gh release create`를
+# 수동으로 불러야 releases 페이지에 나타났음(HACS 업데이트 알림도 이걸 보고 감지).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes

@@ -26,11 +26,17 @@ from .const import (
 # (fixture 실측 — 매번 전체 덤프가 아님) → 아는 키만 뽑아 상태캐시에 merge.
 # dummyMode는 fixtures/재택안심로컬과잼.capture 실측(2026-08-26, 락 키패드에서 직접 로컬로
 # 토글한 케이스) — IDPEVENT(660) 없이도 이 Basic-AttrGroup만으로 상태가 같이 실려온다.
+# useMagicNumber/use2wayAuth도 마찬가지로 원래 IDPEVENT(661/662) 전용으로 뽑던 필드인데,
+# relay observer의 retain 캐시(zigbang/src/transport.rs의 merge_retain)가 msgCategory 무관하게
+# 그동안 본 모든 data 키를 합쳐서 재생하기 때문에 622(잠금상태변경) 같은 다른 카테고리
+# payload에도 섞여 들어와있는 게 실측 확인됨(2026-08-27) — 여기 있어야 그것도 건짐.
 _ATTR_FIELD_MAP = {
     "battery": "battery_raw",
     "locked": "locked",
     "wifiStrength": "rssi",
     "dummyMode": "dummy_mode",
+    "useMagicNumber": "use_magic_number",
+    "use2wayAuth": "use_2way_auth",
 }
 
 # msgCategory: 622=잠금상태변경, 626=키등록확인, 628=키삭제확인, 634=키싱크(1회성),
@@ -41,12 +47,13 @@ _ATTR_FIELD_MAP = {
 # — _MODE_FLAG_CATEGORIES 참조.
 _RELEVANT_CATEGORIES = {622, 626, 628, 638, 648, 652, 660, 661, 662}
 
-# msgCategory -> (data의 원본 boolean 키, coordinator 상태캐시 키). 638(외출시실내방범모드)만
-# boolean이 아니라 mode(0/2) 자체라 별도 처리(extract_idpevent 참조).
+# msgCategory -> data의 원본 boolean 키. coordinator 상태캐시 키는 이 원본 키로 _ATTR_FIELD_MAP을
+# 그대로 찾아써서(둘 다 결국 "이 원본 필드는 이 coordinator 키다"라는 같은 사실이라 이름을 두 곳에
+# 따로 안 둠), 638(외출시실내방범모드)만 boolean이 아니라 mode(0/2) 자체라 별도 처리(extract_idpevent 참조).
 _MODE_FLAG_CATEGORIES = {
-    660: ("dummyMode", "dummy_mode"),
-    661: ("useMagicNumber", "use_magic_number"),
-    662: ("use2wayAuth", "use_2way_auth"),
+    660: "dummyMode",
+    661: "useMagicNumber",
+    662: "use2wayAuth",
 }
 
 
@@ -122,8 +129,8 @@ def extract_idpevent(data: dict[str, Any], msg_date_ms: int | None) -> dict[str,
         return {"event_type": EVENT_TYPE_DOOR_NOT_CLOSED, "at": at, "patch": {"jammed": True}}
 
     if category in _MODE_FLAG_CATEGORIES:
-        source_key, state_key = _MODE_FLAG_CATEGORIES[category]
-        return {"patch": {state_key: bool(data.get(source_key))}}
+        source_key = _MODE_FLAG_CATEGORIES[category]
+        return {"patch": {_ATTR_FIELD_MAP[source_key]: bool(data.get(source_key))}}
 
     if category == 638:
         return {"patch": {"away_indoor_armed": data.get("mode") == 2}}

@@ -374,14 +374,19 @@ def _handle_relay_message(
     if not isinstance(data, dict):
         return
 
-    if msg_code == "Basic-AttrGroup":
-        registry_patch = extract_pin_registry_patch(data)
-        if registry_patch:
-            _merge_pin_registry(coordinator, tp_id, registry_patch)
-        patch = extract_basic_attrgroup_patch(data)
-        if patch:
-            _merge_state(coordinator, tp_id, patch)
-        return
+    # relay observer의 ocp/dataBus retain 캐시(zigbang/src/transport.rs의 merge_retain)는
+    # tpId당 "가장 최근 메시지의 헤더(msgCode) + 그동안 관측된 모든 data 키의 합집합"을 재생한다
+    # — 그래서 HA 재시작 직후 재생되는 메시지의 msgCode가 우연히 IDPEVENT여도 data 안에는 예전
+    # Basic-AttrGroup 풀덤프의 wifiStrength/battery/dummyMode가 그대로 섞여 들어와있다(실측
+    # 확인, 2026-08-27). msgCode로만 분기해서 한쪽 파서만 돌리면 이 필드들이 조용히 유실되니까
+    # (wifi_signal/battery_raw가 재시작마다 unknown이 되는 원인), attrgroup류 필드 추출은
+    # msgCode와 무관하게 항상 시도한다 — 해당 키가 없는 메시지(ACK 등)에는 그냥 no-op이라 안전.
+    registry_patch = extract_pin_registry_patch(data)
+    if registry_patch:
+        _merge_pin_registry(coordinator, tp_id, registry_patch)
+    attr_patch = extract_basic_attrgroup_patch(data)
+    if attr_patch:
+        _merge_state(coordinator, tp_id, attr_patch)
 
     if msg_code == "IDPEVENT":
         event = extract_idpevent(data, payload.get("msgDate"))
