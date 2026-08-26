@@ -45,9 +45,15 @@ class RelayClient:
         ha_pin_tokens: dict[str, str],
         already_registered: set[str],
         registry_seed_ok: bool = True,
+        username: str | None = None,
+        password: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
+        # zigbang addon 0.1.5+ 의 observer(9883) 선택적 basic auth — 기본(둘 다 None)은
+        # 예전처럼 무인증 접속(addon 쪽도 observer_user/observer_pass 둘 다 설정해야 활성화).
+        self._username = username
+        self._password = password
         self._tracked_tpids = tracked_tpids
         self._on_message = on_message
         self._client: aiomqtt.Client | None = None
@@ -71,7 +77,9 @@ class RelayClient:
         """상시 재연결 루프. hass.async_create_background_task 등으로 백그라운드 실행."""
         while not self._stop.is_set():
             try:
-                async with aiomqtt.Client(hostname=self._host, port=self._port) as client:
+                async with aiomqtt.Client(
+                    hostname=self._host, port=self._port, username=self._username, password=self._password
+                ) as client:
                     self._client = client
                     await client.subscribe("#")
                     _LOGGER.info("relay observer 연결됨: %s:%s", self._host, self._port)

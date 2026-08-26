@@ -15,7 +15,9 @@
         "description": "Address of the ../zigbang relay's observer port.",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "relay_username": "Relay username (optional)",
+          "relay_password": "Relay password (optional)"
         }
       }
     },
@@ -34,7 +36,9 @@
       "init": {
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "relay_username": "Relay username (optional)",
+          "relay_password": "Relay password (optional)"
         }
       }
     },

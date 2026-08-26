@@ -39,6 +39,8 @@ from .const import (
     CONF_LOCKS,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_RELAY_PASSWORD,
+    CONF_RELAY_USERNAME,
     CONF_USERNAME,
     DOMAIN,
     HA_PIN_NAME,
@@ -72,10 +74,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = ZigbangCoordinator(hass, entry.entry_id)
     coordinator.data = {
         tp_id: {
-            # REST 시딩이 이번에 성공했으면 그 값을, 실패했으면(seed_ok=False) entry.data에
-            # 저장된 예전 스냅샷(최초 계정 등록 시점)으로 폴백 — 아예 없는 것보단 낫다.
-            "locked": live_status_by_tpid.get(tp_id, {}).get("locked", lock.get("locked")),
-            "battery_raw": live_status_by_tpid.get(tp_id, {}).get("battery_raw", lock.get("battery_raw")),
+            **_live_status_patch(live_status_by_tpid.get(tp_id, {})),
+            # REST 시딩이 이번에 실패한(tp_id가 live_status_by_tpid에 없는) lock만, locked/
+            # battery_raw는 entry.data에 저장된 예전 스냅샷(최초 계정 등록 시점)으로 폴백한다
+            # (아예 없는 것보단 낫다). 보안설정 스위치 4종은 신뢰할 옛 스냅샷이 없어 그대로 unknown.
+            **({} if tp_id in live_status_by_tpid else {
+                "locked": lock.get("locked"),
+                "battery_raw": lock.get("battery_raw"),
+            }),
             "rssi": None,
             "pin_registry": initial_registries.get(tp_id, {}),
             "last_access": None,
@@ -83,16 +89,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "last_user_name": None,
             "last_pin_id": None,
             "last_unlock_at": None,
-            "dummy_mode": live_status_by_tpid.get(tp_id, {}).get("dummy_mode"),
-            "use_magic_number": live_status_by_tpid.get(tp_id, {}).get("use_magic_number"),
-            "use_2way_auth": live_status_by_tpid.get(tp_id, {}).get("use_2way_auth"),
-            "away_indoor_armed": live_status_by_tpid.get(tp_id, {}).get("away_indoor_armed"),
             "jammed": False,
         }
         for tp_id, lock in locks_by_tpid.items()
     }
 
     host, port = _relay_target(entry)
+    relay_username, relay_password = _relay_auth(entry)
 
     def on_message(tp_id: str, payload: dict[str, Any]) -> None:
         _handle_relay_message(hass, entry.entry_id, coordinator, tp_id, payload)
@@ -100,6 +103,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     relay = RelayClient(
         host=host,
         port=port,
+        username=relay_username,
+        password=relay_password,
         tracked_tpids=set(locks_by_tpid),
         on_message=on_message,
         ha_pin_tokens=ha_pin_tokens,
@@ -158,6 +163,16 @@ async def _ensure_ha_pin_tokens(hass: HomeAssistant, entry: ConfigEntry, locks: 
     if changed:
         hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_LOCKS: updated})
     return updated
+
+
+_LIVE_STATUS_FIELDS = ("locked", "battery_raw", "dummy_mode", "use_magic_number", "use_2way_auth", "away_indoor_armed")
+
+
+def _live_status_patch(lock: dict[str, Any]) -> dict[str, Any]:
+    """api.py의 fetch_doorlocks()가 반환하는 lock dict에서 coordinator에 얹을 라이브상태
+    필드만 뽑는다 — 최초 REST 시딩(async_setup_entry)과 수동 새로고침(async_refresh_cloud_data)
+    이 공용으로 쓴다."""
+    return {key: lock.get(key) for key in _LIVE_STATUS_FIELDS}
 
 
 def _strip_pin_tokens(registry: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
@@ -265,14 +280,7 @@ async def async_refresh_cloud_data(hass: HomeAssistant, entry: ConfigEntry, tp_i
 
     for lock in await client.fetch_doorlocks():
         if lock["tp_id"] == tp_id:
-            _merge_state(coordinator, tp_id, {
-                "locked": lock.get("locked"),
-                "battery_raw": lock.get("battery_raw"),
-                "dummy_mode": lock.get("dummy_mode"),
-                "use_magic_number": lock.get("use_magic_number"),
-                "use_2way_auth": lock.get("use_2way_auth"),
-                "away_indoor_armed": lock.get("away_indoor_armed"),
-            })
+            _merge_state(coordinator, tp_id, _live_status_patch(lock))
             break
 
     registry = await client.fetch_pin_registry(lock_info["device_id"])
@@ -344,6 +352,14 @@ def _relay_target(entry: ConfigEntry) -> tuple[str, int]:
     host = entry.options.get(CONF_HOST, entry.data[CONF_HOST])
     port = entry.options.get(CONF_PORT, entry.data[CONF_PORT])
     return host, port
+
+
+def _relay_auth(entry: ConfigEntry) -> tuple[str | None, str | None]:
+    """relay observer(9883)의 선택적 basic auth(zigbang addon 0.1.5+). 빈 문자열(미설정)은
+    aiomqtt 에 무인증으로 그대로 넘기면 안 되니 None 으로 정규화한다."""
+    username = entry.options.get(CONF_RELAY_USERNAME, entry.data.get(CONF_RELAY_USERNAME, ""))
+    password = entry.options.get(CONF_RELAY_PASSWORD, entry.data.get(CONF_RELAY_PASSWORD, ""))
+    return username or None, password or None
 
 
 def _handle_relay_message(

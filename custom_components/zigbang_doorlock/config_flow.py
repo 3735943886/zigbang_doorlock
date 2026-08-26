@@ -1,4 +1,4 @@
-"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 서버 host/port."""
+"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 서버 host/port(+선택적 basic auth)."""
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +12,18 @@ from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ZigbangAuthError, ZigbangCloudClient, ZigbangConnectionError, generate_imei
-from .const import CONF_HOST, CONF_IMEI, CONF_LOCKS, CONF_PASSWORD, CONF_PORT, CONF_USERNAME, DEFAULT_RELAY_PORT, DOMAIN
+from .const import (
+    CONF_HOST,
+    CONF_IMEI,
+    CONF_LOCKS,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_RELAY_PASSWORD,
+    CONF_RELAY_USERNAME,
+    CONF_USERNAME,
+    DEFAULT_RELAY_PORT,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,17 +37,23 @@ _USER_SCHEMA = vol.Schema(
 
 
 def _relay_schema(current: dict[str, Any] | None = None) -> vol.Schema:
+    # relay_username/relay_password는 zigbang addon 0.1.5+의 observer basic auth 대응 —
+    # 둘 다 비워두면(기본값) 예전처럼 무인증으로 접속(RelayClient 참조).
     if current is None:
         return vol.Schema(
             {
                 vol.Required(CONF_HOST): str,
                 vol.Required(CONF_PORT, default=DEFAULT_RELAY_PORT): int,
+                vol.Optional(CONF_RELAY_USERNAME, default=""): str,
+                vol.Optional(CONF_RELAY_PASSWORD, default=""): str,
             }
         )
     return vol.Schema(
         {
             vol.Required(CONF_HOST, default=current[CONF_HOST]): str,
             vol.Required(CONF_PORT, default=current[CONF_PORT]): int,
+            vol.Optional(CONF_RELAY_USERNAME, default=current.get(CONF_RELAY_USERNAME, "")): str,
+            vol.Optional(CONF_RELAY_PASSWORD, default=current.get(CONF_RELAY_PASSWORD, "")): str,
         }
     )
 

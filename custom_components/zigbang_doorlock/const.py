@@ -12,6 +12,10 @@ CONF_IMEI = "imei"
 CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_LOCKS = "locks"
+# relay observer(9883)의 선택적 basic auth(zigbang addon 0.1.5+ observer_user/observer_pass) —
+# 직방 계정 CONF_USERNAME/CONF_PASSWORD와는 별개 자격증명이라 이름을 분리한다.
+CONF_RELAY_USERNAME = "relay_username"
+CONF_RELAY_PASSWORD = "relay_password"
 
 DEFAULT_RELAY_PORT = 9883
 

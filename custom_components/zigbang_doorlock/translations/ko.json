@@ -15,7 +15,9 @@
         "description": "../zigbang relay의 observer 포트 주소를 입력하세요.",
         "data": {
           "host": "호스트",
-          "port": "포트"
+          "port": "포트",
+          "relay_username": "relay 사용자명 (선택)",
+          "relay_password": "relay 비밀번호 (선택)"
         }
       }
     },
@@ -34,7 +36,9 @@
       "init": {
         "data": {
           "host": "호스트",
-          "port": "포트"
+          "port": "포트",
+          "relay_username": "relay 사용자명 (선택)",
+          "relay_password": "relay 비밀번호 (선택)"
         }
       }
     },
