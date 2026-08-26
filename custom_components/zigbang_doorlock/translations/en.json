@@ -71,7 +71,9 @@
               "unlocked_indoor": "Unlocked from inside",
               "unlocked": "Unlocked",
               "key_added": "Key added",
-              "key_removed": "Key removed"
+              "key_removed": "Key removed",
+              "door_open_too_long": "Door open too long",
+              "door_not_closed": "Door not closed properly"
             }
           }
         }
@@ -83,6 +85,20 @@
       },
       "reset_ha_pins": {
         "name": "Reset HA key (danger)"
+      }
+    },
+    "switch": {
+      "dummy_mode": {
+        "name": "Home safety mode"
+      },
+      "use_magic_number": {
+        "name": "Magic number dual security"
+      },
+      "use_2way_auth": {
+        "name": "Two-way entry authentication"
+      },
+      "away_indoor_armed": {
+        "name": "Indoor security while away"
       }
     }
   }

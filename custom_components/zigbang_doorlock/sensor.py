@@ -1,7 +1,9 @@
 """배터리(변환값+raw)/Wi-Fi 신호 센서.
 
-명확히 해석 가능한 값만 엔티티로 노출 — soundLevel/mode/DST 등 설정성 필드는 제어수단도
+명확히 해석 가능한 값만 엔티티로 노출 — soundLevel/DST 등 나머지 설정성 필드는 제어수단도
 없고 의미도 불명확해 제외(대화 스레드 결론). 필요해지면 여기 description 만 추가하면 됨.
+(외출시실내방범모드가 쓰는 "mode" 필드는 이후 실측으로 의미/제어수단이 확인돼 switch.py로
+분리 — 나머지 mode 값들은 여전히 미상.)
 """
 from __future__ import annotations
 

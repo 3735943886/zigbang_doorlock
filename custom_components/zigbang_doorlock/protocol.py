@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Any
 
 from .const import (
+    EVENT_TYPE_DOOR_NOT_CLOSED,
+    EVENT_TYPE_DOOR_OPEN_TOO_LONG,
     EVENT_TYPE_KEY_ADDED,
     EVENT_TYPE_KEY_REMOVED,
     EVENT_TYPE_LOCKED,
@@ -22,15 +24,30 @@ from .const import (
 
 # Basic-AttrGroup(funcType 021) 페이로드는 "변경된 필드만" 부분갱신으로 오기도 함
 # (fixture 실측 — 매번 전체 덤프가 아님) → 아는 키만 뽑아 상태캐시에 merge.
+# dummyMode는 fixtures/재택안심로컬과잼.capture 실측(2026-08-26, 락 키패드에서 직접 로컬로
+# 토글한 케이스) — IDPEVENT(660) 없이도 이 Basic-AttrGroup만으로 상태가 같이 실려온다.
 _ATTR_FIELD_MAP = {
     "battery": "battery_raw",
     "locked": "locked",
     "wifiStrength": "rssi",
+    "dummyMode": "dummy_mode",
 }
 
 # msgCategory: 622=잠금상태변경, 626=키등록확인, 628=키삭제확인, 634=키싱크(1회성),
 # 670=DST정보(무관), 905=원인미상(무관) — PROTOCOL.md §10.
-_RELEVANT_CATEGORIES = {622, 626, 628}
+# 638/660/661/662는 fixtures/othermodes.capture 실측(2026-08-26) — 앱이 func 401(setAttr)로
+# 보안설정을 바꿀 때마다 클라우드가 확인차 돌려주는 상태에코. 잠금/키이벤트와 달리 "활동기록"이
+# 아니라 연속상태(스위치 on/off)라서 event.py 활동엔티티로는 안 보내고 coordinator 패치로만 씀
+# — _MODE_FLAG_CATEGORIES 참조.
+_RELEVANT_CATEGORIES = {622, 626, 628, 638, 648, 652, 660, 661, 662}
+
+# msgCategory -> (data의 원본 boolean 키, coordinator 상태캐시 키). 638(외출시실내방범모드)만
+# boolean이 아니라 mode(0/2) 자체라 별도 처리(extract_idpevent 참조).
+_MODE_FLAG_CATEGORIES = {
+    660: ("dummyMode", "dummy_mode"),
+    661: ("useMagicNumber", "use_magic_number"),
+    662: ("use2wayAuth", "use_2way_auth"),
+}
 
 
 def parse_ocp_payload(raw: bytes) -> dict[str, Any] | None:
@@ -94,6 +111,22 @@ def extract_idpevent(data: dict[str, Any], msg_date_ms: int | None) -> dict[str,
 
     if category == 628:
         return {"event_type": EVENT_TYPE_KEY_REMOVED, "pin_id": data.get("pinId"), "pin_type": data.get("pinType"), "at": at}
+
+    if category == 648:
+        return {"event_type": EVENT_TYPE_DOOR_OPEN_TOO_LONG, "at": at}
+
+    if category == 652:
+        # HA LockEntity.is_jammed -> STATE_JAMMED에 반영(lock.py). 622(잠금상태변경)가 다시
+        # 오면(잠기든 열리든, __init__.py 참조) 해제 — 이 카테고리 자체엔 "풀림" 신호가 없어서
+        # 다음 상태보고를 해제 트리거로 쓴다.
+        return {"event_type": EVENT_TYPE_DOOR_NOT_CLOSED, "at": at, "patch": {"jammed": True}}
+
+    if category in _MODE_FLAG_CATEGORIES:
+        source_key, state_key = _MODE_FLAG_CATEGORIES[category]
+        return {"patch": {state_key: bool(data.get(source_key))}}
+
+    if category == 638:
+        return {"patch": {"away_indoor_armed": data.get("mode") == 2}}
 
     return None
 
@@ -227,6 +260,56 @@ def build_trigger_unlock(sid: str, tpid: str, pin_token: str) -> tuple[str, dict
         "data": {"func": 407, "arg": {"locked": False, "pin": pin_token, "access": "SVR"}, "from": pin_token},
     }
     return topic, payload
+
+
+def _build_setattr(sid: str, tpid: str, pin_token: str, arg: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """func 401(setAttr) 공용 envelope — build_trigger_unlock과 동일한 실캡처 기준 스키마
+    (authToken 필드 없음, resCode "200"). 원래는 공식 앱이 클라우드에서 락 토픽으로 내리는
+    명령(fixtures/othermodes.capture 실측, dir:cloud2dev)이라, HA에서 직접 켜고 끌 때는 이걸
+    그대로 재현해서 우리가 "클라우드 역할"을 하는 것 — "from"은 캡처의 앱 세션 키 대신 우리
+    영구 HA pin_token을 쓴다(등록 안 된 identity로 보내면 락이 거절할 수 있어서, 항상 이미
+    등록 확인된 pin_token만 넘겨야 함 — relay_client.py의 async_set_mode 참조)."""
+    topic = f"ocp/{sid}/{tpid}"
+    payload = {
+        "version": "1.0",
+        "msgType": "Q",
+        "funcType": "030",
+        "sId": sid,
+        "tpId": tpid,
+        "tId": tpid,
+        "msgCode": "MSGBA0300001",
+        "msgId": f"op-{_now_ms()}-{secrets.token_hex(3)}",
+        "msgDate": _now_ms(),
+        "resCode": "200",
+        "resMsg": "",
+        "dataFormat": "application/json",
+        "severity": "0",
+        "encType": "0",
+        "data": {"func": 401, "arg": arg, "from": pin_token},
+    }
+    return topic, payload
+
+
+def build_set_dummy_mode(sid: str, tpid: str, pin_token: str, enabled: bool) -> tuple[str, dict[str, Any]]:
+    """재택안심모드(dummyMode) on/off. 캡처된 두 호출(on/off) 모두 arg에 "access":"SVR"이
+    같이 실려있어서(다른 3개 모드엔 없음) 그대로 따른다 — 이유는 불명이나 실측 그대로 재현."""
+    return _build_setattr(sid, tpid, pin_token, {"dummyMode": enabled, "access": "SVR"})
+
+
+def build_set_magic_number_mode(sid: str, tpid: str, pin_token: str, enabled: bool) -> tuple[str, dict[str, Any]]:
+    """매직넘버이중보안모드(useMagicNumber) on/off."""
+    return _build_setattr(sid, tpid, pin_token, {"useMagicNumber": enabled})
+
+
+def build_set_2way_auth_mode(sid: str, tpid: str, pin_token: str, enabled: bool) -> tuple[str, dict[str, Any]]:
+    """이중출입인증모드(use2wayAuth) on/off."""
+    return _build_setattr(sid, tpid, pin_token, {"use2wayAuth": enabled})
+
+
+def build_set_away_indoor_mode(sid: str, tpid: str, pin_token: str, enabled: bool) -> tuple[str, dict[str, Any]]:
+    """외출시실내방범모드 on/off — 다른 3개와 달리 별도 boolean 키가 아니라 락의 mode 필드
+    자체를 2(on)/0(off)로 바꾼다(msgCategory 638, oldMode 동봉해서 응답옴)."""
+    return _build_setattr(sid, tpid, pin_token, {"mode": 2 if enabled else 0})
 
 
 def _now_ms() -> int:

@@ -77,6 +77,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "last_user_name": None,
             "last_pin_id": None,
             "last_unlock_at": None,
+            "dummy_mode": None,
+            "use_magic_number": None,
+            "use_2way_auth": None,
+            "away_indoor_armed": None,
+            "jammed": False,
         }
         for tp_id, lock in locks_by_tpid.items()
     }
@@ -338,9 +343,20 @@ def _handle_relay_message(
         event = extract_idpevent(data, payload.get("msgDate"))
         if event is None:
             return
-        patch: dict[str, Any] = {}
+
+        if "event_type" not in event:
+            # 638/660/661/662(보안설정 스위치 상태에코) — 활동기록이 아니라 연속상태라
+            # event.py 활동엔티티로는 안 보내고 coordinator만 갱신한다. protocol.py 참조.
+            _merge_state(coordinator, tp_id, event["patch"])
+            return
+
+        patch: dict[str, Any] = dict(event.get("patch") or {})
         if "locked" in event:
             patch["locked"] = event["locked"]
+            # 622(잠금상태변경)는 락이 다시 정상 상태를 보고한 거라, 직전에 652(재밍)로 선 jammed
+            # 플래그를 여기서 해제한다 — 652 자체엔 "풀림" 신호가 없어서 다음 상태보고를 그 대용으로
+            # 쓴다(lock.py의 is_jammed 참조).
+            patch["jammed"] = False
 
             access = event.get("access")
             pin_id = event.get("pin_id")

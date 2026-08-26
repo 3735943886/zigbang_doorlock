@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "zigbang_doorlock"
-PLATFORMS = ["lock", "sensor", "event", "button"]
+PLATFORMS = ["lock", "sensor", "event", "button", "switch"]
 
 MANUFACTURER = "Zigbang (Samsung SDS IHP)"
 
@@ -25,7 +25,9 @@ DEFAULT_RELAY_PORT = 9883
 HA_PIN_NAME = "ZBDL-HA-KEY"
 
 # 락별 상태캐시 키: device_id, tp_id, model, name, locked, battery_raw, rssi, pin_registry,
-# last_access, last_method, last_user_name, last_pin_id, last_unlock_at
+# last_access, last_method, last_user_name, last_pin_id, last_unlock_at,
+# dummy_mode, use_magic_number, use_2way_auth, away_indoor_armed(switch.py 참조),
+# jammed(lock.py의 is_jammed -> HA STATE_JAMMED 참조)
 
 # IDPEVENT(622)의 access -> 대분류 라벨. 카드/지문/마스터코드 등 실제 자격증명으로 열린 경우엔
 # access 값 자체가 아래 PIN_TYPE_LABELS 코드와 동일하게 온다(실측 2026-08-20 relay tap 확인:
@@ -74,6 +76,12 @@ EVENT_TYPE_UNLOCKED = {
 EVENT_TYPE_LOCKED = "locked"
 EVENT_TYPE_KEY_ADDED = "key_added"
 EVENT_TYPE_KEY_REMOVED = "key_removed"
+# IDPEVENT msgCategory 648/652 — 클라우드 앱 로그 실측(2026-08-26, fixtures/재택안심로컬과잼.capture):
+# 648은 문열림 유지 32초 후 발생("문이 30초 이상 열려 있습니다" 임계값과 정확히 일치),
+# 652는 재잠금 시도(재밍 재현) 중 문열림 15초 만에 발생("문이 제대로 닫히지 않았습니다") —
+# 둘 다 부가데이터가 없어(access/pinId 등) locked/key 이벤트처럼 상태갱신은 안 하고 활동기록만 남긴다.
+EVENT_TYPE_DOOR_OPEN_TOO_LONG = "door_open_too_long"
+EVENT_TYPE_DOOR_NOT_CLOSED = "door_not_closed"
 
 EVENT_TYPES = [
     EVENT_TYPE_LOCKED,
@@ -83,6 +91,8 @@ EVENT_TYPES = [
     "unlocked",  # access 미상 폴백
     EVENT_TYPE_KEY_ADDED,
     EVENT_TYPE_KEY_REMOVED,
+    EVENT_TYPE_DOOR_OPEN_TOO_LONG,
+    EVENT_TYPE_DOOR_NOT_CLOSED,
 ]
 
 SIGNAL_EVENT = f"{DOMAIN}_event_{{}}_{{}}"  # .format(entry_id, tp_id)

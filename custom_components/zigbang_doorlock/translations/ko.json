@@ -71,7 +71,9 @@
               "unlocked_indoor": "실내에서 열림",
               "unlocked": "열림",
               "key_added": "키 등록",
-              "key_removed": "키 삭제"
+              "key_removed": "키 삭제",
+              "door_open_too_long": "문 열림 지속(30초 이상)",
+              "door_not_closed": "문이 제대로 닫히지 않음"
             }
           }
         }
@@ -83,6 +85,20 @@
       },
       "reset_ha_pins": {
         "name": "HA 키 초기화 (위험)"
+      }
+    },
+    "switch": {
+      "dummy_mode": {
+        "name": "재택 안심모드"
+      },
+      "use_magic_number": {
+        "name": "매직넘버 이중보안 모드"
+      },
+      "use_2way_auth": {
+        "name": "이중 출입인증 모드"
+      },
+      "away_indoor_armed": {
+        "name": "외출 시 실내방범 모드"
       }
     }
   }

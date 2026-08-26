@@ -16,6 +16,8 @@ import aiomqtt
 
 from .protocol import build_delete_key, build_register_key, build_trigger_unlock, build_wake
 
+SetModeBuilder = Callable[[str, str, str, bool], tuple[str, dict[str, Any]]]
+
 _LOGGER = logging.getLogger(__name__)
 
 _RECONNECT_INTERVAL = 15
@@ -168,6 +170,23 @@ class RelayClient:
 
         trg_topic, trg_payload = build_trigger_unlock(sid, tpid, pin_token)
         await self.publish(trg_topic, trg_payload)
+
+    async def async_set_mode(self, tpid: str, builder: SetModeBuilder, enabled: bool) -> None:
+        """switch.py 전용 — func 401(setAttr)로 보안설정 on/off. 원래 공식 앱이 클라우드에서
+        내리는 명령이라(protocol.py의 build_set_* 참조) HA가 직접 보낼 땐 항상 이미 등록
+        확인된 우리 HA pin_token으로 "from"을 채운다 — 등록 안 됐으면 먼저 등록(408)부터.
+        wake(508)는 실캡처에 없어서 안 보냄(unlock 트리거와 달리 이 명령엔 안 필요)."""
+        sid = self._sid_by_tpid.get(tpid)
+        if sid is None:
+            raise RelayUnlockError(
+                "아직 이 도어락의 세션 정보(sId)를 관측하지 못했습니다 — "
+                "락이 최근 트래픽을 보낼 때까지 잠시 후 다시 시도해주세요."
+            )
+        if tpid not in self._registered:
+            await self._register_now(tpid, sid)
+        pin_token = self._ha_pin_tokens[tpid]
+        topic, payload = builder(sid, tpid, pin_token, enabled)
+        await self._publish_and_wait_ack(topic, payload)
 
     def adopt_token(self, tpid: str, pin_token: str) -> None:
         """락에 이미 등록돼있는(이름=HA_PIN_NAME) pin을 REST로 새로 발견했을 때 호출 — 새로

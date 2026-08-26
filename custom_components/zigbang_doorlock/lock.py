@@ -43,6 +43,13 @@ class ZigbangLock(ZigbangEntity, LockEntity):
         return self._state.get("locked")
 
     @property
+    def is_jammed(self) -> bool | None:
+        """IDPEVENT(652, "문이 제대로 닫히지 않았습니다") 실측(2026-08-26, fixtures/
+        재택안심로컬과잼.capture) -> HA STATE_JAMMED. 다음 622(잠금상태변경)가 올 때까지
+        유지된다(protocol.py/extract_idpevent, __init__.py 참조) — 652 자체엔 해제 신호가 없음."""
+        return self._state.get("jammed")
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         state = self._state
         return {
