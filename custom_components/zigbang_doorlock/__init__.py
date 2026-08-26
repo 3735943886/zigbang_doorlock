@@ -3,16 +3,20 @@
 락 상태갱신/제어는 ../zigbang 로컬 relay 의 observer 포트를 통해 push 로 처리한다
 (iot_class: local_push) — 클라우드는 상시 폴링하지 않는다.
 
-단, pin 레지스트리(pinId->지문/카드/키패드 등 어떤 자격증명인지)만은 REST 로 받는다: relay
-observer 는 tap 이라 HA 가 뜨기 전 트래픽은 못 보고, 실측 로그(private/logs/*ocpdataBus*.txt,
-../zigbang) 확인 결과 pinInfoXXX 는 세션 부트스트랩에도 항상 오는 게 아니라 그 슬롯이 등록/터치될
-때만 개별적으로 오며 실제 카드 언락 순간에도 안 실려있던 사례가 있었다. 게다가 **앱에서 pin
-이름만 바꾸는 건 도어락 쪽에 아무 트래픽도 안 보낸다**(실측 확인) — relay 로는 그 변경을 원리적으로
-절대 못 알아챈다. 그래서:
+단, pin 레지스트리(pinId->지문/카드/키패드 등 어떤 자격증명인지)와 doorlockStatusVO 기반
+라이브상태(locked/battery/dummy_mode/use_magic_number/use_2way_auth/away_indoor_armed)는
+REST 로도 받는다: relay observer 는 tap 이라 HA 가 뜨기 전 트래픽은 못 보고, 실측 로그
+(private/logs/*ocpdataBus*.txt, ../zigbang) 확인 결과 pinInfoXXX 는 세션 부트스트랩에도 항상
+오는 게 아니라 그 슬롯이 등록/터치될 때만 개별적으로 오며 실제 카드 언락 순간에도 안 실려있던
+사례가 있었다. 게다가 **앱에서 pin 이름만 바꾸는 건 도어락 쪽에 아무 트래픽도 안 보낸다**(실측
+확인) — relay 로는 그 변경을 원리적으로 절대 못 알아챈다. 보안설정 스위치들도 마찬가지로 HA가
+막 시작했을 때는 relay 트래픽이 잡히기 전까지 unknown 상태로 남는데, membersdoorlocklist 응답의
+doorlockStatusVO에 이미 이 값들이 실려있는 게 실측 확인돼서(fixtures/
+membersdoorlocklist_response.json, api.py의 fetch_doorlocks 참조) 같이 REST로 시딩한다. 그래서:
   - async_setup_entry 에서 시작마다 1회 REST 로 초기 시딩(실패해도 lock/battery/rssi 등 핵심기능은
     relay 로 그대로 동작 — 아래 try/except).
-  - button.py 의 수동 새로고침 버튼으로 언제든 다시 REST 로 받아올 수 있음(재시작 없이).
-  - relay 의 Basic-AttrGroup push 는 그 사이 새로 등록/터치된 슬롯만 보조로 반영.
+  - button.py 의 "클라우드 데이터 새로고침" 버튼으로 언제든 다시 REST 로 받아올 수 있음(재시작 없이).
+  - relay 의 Basic-AttrGroup/IDPEVENT push 는 그 사이 바뀐 값을 실시간으로 보조 반영.
 """
 from __future__ import annotations
 
@@ -54,8 +58,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     locks_by_tpid = {lock["tp_id"]: lock for lock in locks}
     ha_pin_tokens = {tp_id: lock["ha_pin_token"] for tp_id, lock in locks_by_tpid.items()}
 
-    initial_registries, already_registered, adopted_tokens, registry_seed_ok = await _fetch_initial_pin_registries(
-        hass, entry, locks_by_tpid, ha_pin_tokens
+    initial_registries, live_status_by_tpid, already_registered, adopted_tokens, registry_seed_ok = (
+        await _fetch_initial_cloud_state(hass, entry, locks_by_tpid, ha_pin_tokens)
     )
     if adopted_tokens:
         ha_pin_tokens.update(adopted_tokens)
@@ -68,8 +72,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = ZigbangCoordinator(hass, entry.entry_id)
     coordinator.data = {
         tp_id: {
-            "locked": lock.get("locked"),
-            "battery_raw": lock.get("battery_raw"),
+            # REST 시딩이 이번에 성공했으면 그 값을, 실패했으면(seed_ok=False) entry.data에
+            # 저장된 예전 스냅샷(최초 계정 등록 시점)으로 폴백 — 아예 없는 것보단 낫다.
+            "locked": live_status_by_tpid.get(tp_id, {}).get("locked", lock.get("locked")),
+            "battery_raw": live_status_by_tpid.get(tp_id, {}).get("battery_raw", lock.get("battery_raw")),
             "rssi": None,
             "pin_registry": initial_registries.get(tp_id, {}),
             "last_access": None,
@@ -77,10 +83,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "last_user_name": None,
             "last_pin_id": None,
             "last_unlock_at": None,
-            "dummy_mode": None,
-            "use_magic_number": None,
-            "use_2way_auth": None,
-            "away_indoor_armed": None,
+            "dummy_mode": live_status_by_tpid.get(tp_id, {}).get("dummy_mode"),
+            "use_magic_number": live_status_by_tpid.get(tp_id, {}).get("use_magic_number"),
+            "use_2way_auth": live_status_by_tpid.get(tp_id, {}).get("use_2way_auth"),
+            "away_indoor_armed": live_status_by_tpid.get(tp_id, {}).get("away_indoor_armed"),
             "jammed": False,
         }
         for tp_id, lock in locks_by_tpid.items()
@@ -159,15 +165,17 @@ def _strip_pin_tokens(registry: dict[int, dict[str, Any]]) -> dict[int, dict[str
     return {pin_id: {"pin_type": info.get("pin_type"), "pin_name": info.get("pin_name")} for pin_id, info in registry.items()}
 
 
-async def _fetch_initial_pin_registries(
+async def _fetch_initial_cloud_state(
     hass: HomeAssistant,
     entry: ConfigEntry,
     locks_by_tpid: dict[str, dict[str, Any]],
     ha_pin_tokens: dict[str, str],
-) -> tuple[dict[str, dict[int, dict[str, Any]]], set[str], dict[str, str], bool]:
+) -> tuple[dict[str, dict[int, dict[str, Any]]], dict[str, dict[str, Any]], set[str], dict[str, str], bool]:
     """모듈 docstring 참조 — 실패해도 빈 결과로 degrade, 핵심기능(lock/sensor)엔 영향 없음.
-    반환: (엔티티용 공개 레지스트리, HA 영구키가 이미 등록 확인된 tpId 집합, 채택된 토큰들,
-    이 REST 시딩 자체가 성공했는지).
+    반환: (엔티티용 공개 레지스트리, tpId별 doorlockStatusVO 기반 라이브상태(api.py의
+    fetch_doorlocks 반환 dict — locked/battery_raw/dummy_mode/use_magic_number/use_2way_auth/
+    away_indoor_armed), HA 영구키가 이미 등록 확인된 tpId 집합, 채택된 토큰들, 이 REST 시딩
+    자체가 성공했는지).
 
     entry.data 에 저장된 토큰이 락과 안 맞아도, 이름이 HA_PIN_NAME 인 pin이 이미 락에 있으면
     새로 등록하지 않고 그 토큰을 채택한다 — 안 그러면 재시작마다 새 토큰이 생겨서(entry.data
@@ -176,12 +184,16 @@ async def _fetch_initial_pin_registries(
     self-heal/lazy 등록이 "락에 이미 이 이름의 키가 있었는지" 확인 없이 등록하게 된다 —
     relay_client.py의 registry_seed_ok 참조."""
     public_registries: dict[str, dict[int, dict[str, Any]]] = {}
+    live_status_by_tpid: dict[str, dict[str, Any]] = {}
     already_registered: set[str] = set()
     adopted_tokens: dict[str, str] = {}
     seed_ok = True
     try:
         client = _build_cloud_client(hass, entry)
         await client.login()
+        for lock in await client.fetch_doorlocks():
+            if lock["tp_id"] in locks_by_tpid:
+                live_status_by_tpid[lock["tp_id"]] = lock
         for tp_id, lock in locks_by_tpid.items():
             raw = await client.fetch_pin_registry(lock["device_id"])
             public_registries[tp_id] = _strip_pin_tokens(raw)
@@ -199,8 +211,8 @@ async def _fetch_initial_pin_registries(
                 already_registered.add(tp_id)
     except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
         seed_ok = False
-        _LOGGER.warning("pin 레지스트리 시딩 실패(카드/지문 등 세분화는 안 되지만 나머지는 정상 동작): %s", err)
-    return public_registries, already_registered, adopted_tokens, seed_ok
+        _LOGGER.warning("클라우드 상태 시딩 실패(카드/지문 세분화·보안설정 스위치 초기값은 안 되지만 나머지는 정상 동작): %s", err)
+    return public_registries, live_status_by_tpid, already_registered, adopted_tokens, seed_ok
 
 
 def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
@@ -235,9 +247,12 @@ def _warn_if_duplicate_ha_pins(registry: dict[int, dict[str, Any]], tp_id: str) 
         )
 
 
-async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> None:
-    """button.py 의 수동 새로고침에서 호출 — 여기선 실패를 삼키지 않고 그대로 올려서
-    버튼을 누른 사용자에게 실패가 보이게 한다(시작시 자동시딩과 반대 정책).
+async def async_refresh_cloud_data(hass: HomeAssistant, entry: ConfigEntry, tp_id: str) -> None:
+    """button.py 의 "클라우드 데이터 새로고침"에서 호출 — pin 레지스트리뿐 아니라
+    doorlockStatusVO 기반 라이브상태(locked/battery/dummy_mode/use_magic_number/use_2way_auth/
+    away_indoor_armed)도 같이 갱신한다(fixtures/membersdoorlocklist_response.json 실측 —
+    REST 응답에 이미 이 값들이 다 있음, api.py의 fetch_doorlocks 참조). 여기선 실패를 삼키지
+    않고 그대로 올려서 버튼을 누른 사용자에게 실패가 보이게 한다(시작시 자동시딩과 반대 정책).
     REST 로 다시 받아본 결과 HA pin 이 안 보이면(사용자가 앱에서 직접 지웠거나 락 초기화 등)
     바로 재등록까지 한다 — 다음 unlock 을 기다리지 않음."""
     data = hass.data[DOMAIN][entry.entry_id]
@@ -247,6 +262,19 @@ async def async_refresh_pin_registry(hass: HomeAssistant, entry: ConfigEntry, tp
 
     client = _build_cloud_client(hass, entry)
     await client.login()
+
+    for lock in await client.fetch_doorlocks():
+        if lock["tp_id"] == tp_id:
+            _merge_state(coordinator, tp_id, {
+                "locked": lock.get("locked"),
+                "battery_raw": lock.get("battery_raw"),
+                "dummy_mode": lock.get("dummy_mode"),
+                "use_magic_number": lock.get("use_magic_number"),
+                "use_2way_auth": lock.get("use_2way_auth"),
+                "away_indoor_armed": lock.get("away_indoor_armed"),
+            })
+            break
+
     registry = await client.fetch_pin_registry(lock_info["device_id"])
     _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry))
     relay.mark_registry_seed_ok()

@@ -123,6 +123,13 @@ class ZigbangCloudClient:
         locks = []
         for item in data.get("doorlockVOList", []):
             status = item.get("doorlockStatusVO", {}) or {}
+            # doorlockStatusVO 실측(2026-08-26, fixtures/membersdoorlocklist_response.json)엔
+            # "set"으로 시작하는 필드들(setUseMagicNumber/setUse2wayAuth/setMode 등)도 있는데,
+            # 이 계정 실측에서 setUse2wayAuth=2인데도 use2wayAuth(bare)=false로 나오는 등 서로
+            # 안 맞는 경우가 있어 "설정한 값"과 "현재 값"이 다른 개념으로 보임 — 그 시점 MQTT
+            # 캡처(othermodes.capture)로 확인된 실제 라이브 상태(dummyMode/useMagicNumber/
+            # use2wayAuth/mode)와는 이 bare 필드들이 정확히 일치해서, 여기(bare 필드)만 쓴다.
+            mode = status.get("mode")
             locks.append(
                 {
                     "device_id": item.get("deviceId"),
@@ -131,6 +138,10 @@ class ZigbangCloudClient:
                     "name": item.get("deviceNm") or "Zigbang 도어락",
                     "locked": status.get("locked"),
                     "battery_raw": status.get("battery"),
+                    "dummy_mode": status.get("dummyMode"),
+                    "use_magic_number": status.get("useMagicNumber"),
+                    "use_2way_auth": status.get("use2wayAuth"),
+                    "away_indoor_armed": None if mode is None else mode == 2,
                 }
             )
         return [lock for lock in locks if lock["tp_id"]]

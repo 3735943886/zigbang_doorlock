@@ -81,7 +81,7 @@
     },
     "button": {
       "refresh_pin_registry": {
-        "name": "Refresh pin registry"
+        "name": "Refresh cloud data"
       },
       "reset_ha_pins": {
         "name": "Reset HA key (danger)"
@@ -89,7 +89,7 @@
     },
     "switch": {
       "dummy_mode": {
-        "name": "Home safety mode"
+        "name": "Indoor safety mode"
       },
       "use_magic_number": {
         "name": "Magic number dual security"

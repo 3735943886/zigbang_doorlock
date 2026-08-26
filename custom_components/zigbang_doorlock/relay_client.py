@@ -61,7 +61,7 @@ class RelayClient:
         # REST(getdoorkeys)로 이미 등록 확인된 tpId 집합 — 여기 없는 애는 락 트래픽이 처음
         # 관측되는 즉시(self-heal), 또는 첫 unlock/수동새로고침(ensure_registered) 때 등록(408)됨.
         self._registered = set(already_registered)
-        # HA 시작시 REST 시딩(__init__.py:_fetch_initial_pin_registries)이 실패해서 "락에 이미
+        # HA 시작시 REST 시딩(__init__.py:_fetch_initial_cloud_state)이 실패해서 "락에 이미
         # HA pin이 있는지" 자체를 확인 못한 상태인지 여부. False면 self-heal/lazy 등록이 락의
         # 실제 상태를 모른 채 등록하는 거라 기존 키와 중복될 수 있다 — 이후 REST 조회가 성공하면
         # (수동 새로고침 등) mark_registry_seed_ok로 갱신된다.

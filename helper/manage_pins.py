@@ -153,6 +153,15 @@ def pick_device(username: str, password: str, imei: str) -> tuple[str, str, str,
     return member_id, auth_header, auth_code, locks[idx]
 
 
+def cmd_status(args: argparse.Namespace) -> None:
+    """membersdoorlocklist 응답의 도어락 항목을 가공 없이 그대로 덤프 — api.py의 fetch_doorlocks는
+    doorlockStatusVO에서 locked/battery만 뽑아쓰는데, dummyMode/mode/useMagicNumber/use2wayAuth
+    같은 필드가 여기 원본에 이미 들어있는지 확인하는 용도(2026-08-26 논의: 스위치 초기상태가
+    relay 트래픽 잡히기 전까진 계속 unknown인 문제, REST로 시딩 가능한지 확인)."""
+    member_id, auth_header, auth_code, lock = pick_device(args.id, args.password, args.imei)
+    print(json.dumps(lock, indent=2, ensure_ascii=False))
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     member_id, auth_header, auth_code, lock = pick_device(args.id, args.password, args.imei)
     pins = fetch_pin_infos(member_id, lock["deviceId"], auth_header, auth_code)
@@ -243,6 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="등록된 pin 목록 조회(REST만, relay 불필요)")
+    sub.add_parser("status", help="membersdoorlocklist 원본 응답 그대로 덤프(REST만, relay 불필요)")
 
     d = sub.add_parser("delete", help="지정한 pinId 삭제(REST 조회 + relay observer로 injection)")
     d.add_argument("--pin-id", type=int, required=True)
@@ -264,6 +274,8 @@ def main() -> None:
 
     if args.command == "list":
         cmd_list(args)
+    elif args.command == "status":
+        cmd_status(args)
     elif args.command == "delete":
         cmd_delete(args)
 
