@@ -1,17 +1,21 @@
-# zigbang-relay(Docker) 설정 예시. 컨테이너 안 WORKDIR은 /data이고 모든 경로는 그 기준
-# 상대경로다 — 이 파일을 /opt/zigbang-relay/relay.toml로 복사한 뒤, ← 표시된 값만 실제
-# 값으로 바꾸면 된다. 자세한 설명: ../RELAY_SETUP.md
+# 게이트웨이 배포용 relay config (상대경로). 전부 이 파일과 같은 디렉터리(/opt/zigbang-relay 등,
+# systemd WorkingDirectory / docker WORKDIR) 기준 — 그 디렉터리 하나만 통째로 배포/마운트하면 됨
+# (README.md 참조). 실제 값(도메인/포트)은 설치 후 이 파일에서 편집.
+# 규칙: rules/*.rhai(mtime 핫리로드 — 수정시 재시작 불필요). 설계: DESIGN.md(레포 밖 private).
 
 log_level = "info"                 # error|warn|info|debug|trace
-observer = "0.0.0.0:9883"          # 평문 MQTT 관찰/명령 포트 — 로컬신뢰망 전용, 절대 인터넷에 노출 금지
-rules_file = "rules"                # 디렉터리(안의 *.rhai 전부 파일명순, 뒤로 정렬될 이름=낮은 우선순위)
+observer = "0.0.0.0:9883"          # 평문 MQTT 관찰/명령(로컬신뢰망 전용 — 방화벽으로 막을 것)
+# observer_user = "watcher"        # 둘 다 설정해야 인증 활성화(CONNECT username/password 검사).
+# observer_pass = "바꿀것"          # 주석 처리(기본)면 예전처럼 무인증 — 방화벽만으로 막는 셈.
+rules_file = "rules"
 replay_store = "state/replay.json"
 log_dir = "logs"
 
+# TLS: certbot deploy-hook 가 이 디렉터리의 certs/ 로 cert 를 복사해준다(README 참조).
 cert_file = "certs/fullchain.pem"
 cert_key  = "certs/privkey.pem"
-cert_name = "relay.example.com"    # ← 실제로 발급받은 도메인으로 변경
-upstream_insecure = true           # 실클라우드로 나갈 때 그쪽 cert는 검증 안 함(낮은 우선순위 기술부채)
+cert_name = "relay.example.com"    # ← 실제 주입 도메인으로 변경
+upstream_insecure = true           # 실클라우드로 나갈 때 그쪽 cert 검증 안 함(기술부채, 낮은 우선순위)
 
 answered_ttl_secs = 120
 answered_cap = 8192
