@@ -119,14 +119,11 @@ class ZigbangConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> ZigbangOptionsFlow:
-        return ZigbangOptionsFlow(config_entry)
+        return ZigbangOptionsFlow()
 
 
 class ZigbangOptionsFlow(config_entries.OptionsFlow):
     """relay가 이사가도(IP/포트 변경) 계정 재인증 없이 host/port만 수정."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
         errors: dict[str, str] = {}

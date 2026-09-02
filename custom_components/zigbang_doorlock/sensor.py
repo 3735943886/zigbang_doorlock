@@ -46,6 +46,7 @@ SENSOR_DESCRIPTIONS: tuple[ZigbangSensorDescription, ...] = (
         key="battery_raw",
         translation_key="battery_raw",
         icon="mdi:information-outline",
+        state_class=SensorStateClass.MEASUREMENT,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=lambda state: state.get("battery_raw"),
