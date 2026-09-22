@@ -171,6 +171,13 @@ def cmd_list(args: argparse.Namespace) -> None:
             f"  pinId={p['pinId']:<4} type={p['pinType']:<5} "
             f"name={(p.get('pinName') or ''):<20} regDate={p.get('pinRegDate') or ''}  pin={mask(p.get('pin'))}"
         )
+    if args.raw:
+        # api.py의 fetch_pin_registry가 이름을 못 찾는 원인 진단용 — pinName이 실제로 안 오거나
+        # 다른 필드명(pinType별로 다를 수 있음)으로 오는지 원본 JSON으로 직접 확인한다.
+        # pin(원본 자격증명 토큰)만 마스킹하고 나머지 필드는 전부 그대로 보여준다.
+        redacted = [{**p, "pin": mask(p.get("pin"))} for p in pins]
+        print("\n원본 JSON(pin 필드만 마스킹):")
+        print(json.dumps(redacted, indent=2, ensure_ascii=False))
 
 
 def sniff_sid(relay_host: str, relay_port: int, tp_id: str, timeout: int) -> str | None:
@@ -202,9 +209,22 @@ def cmd_delete(args: argparse.Namespace) -> None:
     member_id, auth_header, auth_code, lock = pick_device(args.id, args.password, args.imei)
     tp_id = lock["tpId"]
     pins = fetch_pin_infos(member_id, lock["deviceId"], auth_header, auth_code)
-    target = next((p for p in pins if p["pinId"] == args.pin_id), None)
-    if not target:
-        sys.exit(f"pinId={args.pin_id} 를 찾을 수 없습니다. 'list'로 먼저 확인하세요.")
+    # pinId는 pinType별로 독립적으로 매겨져서(실측 확인, 2026-09-22: 카드 pinId=1과 지문
+    # pinId=1이 동시에 존재 가능 — custom_components/zigbang_doorlock/api.py의 fetch_pin_registry
+    # 참조) pinId 하나만으로 고르면 엉뚱한 타입의 pin을 지울 위험이 있다. 후보가 여럿이면
+    # --pin-type으로 명시하게 하고, 그냥 진행하지 않는다(삭제는 되돌릴 수 없음).
+    candidates = [p for p in pins if p["pinId"] == args.pin_id]
+    if args.pin_type:
+        candidates = [p for p in candidates if p["pinType"] == args.pin_type]
+    if not candidates:
+        sys.exit(f"pinId={args.pin_id}"
+                  + (f" type={args.pin_type}" if args.pin_type else "")
+                  + " 를 찾을 수 없습니다. 'list'로 먼저 확인하세요.")
+    if len(candidates) > 1:
+        listing = "\n".join(f"  type={p['pinType']:<5} name={p.get('pinName') or ''!r}" for p in candidates)
+        sys.exit(f"pinId={args.pin_id} 가 타입이 다른 {len(candidates)}개 pin에 걸쳐 있습니다 — "
+                  f"--pin-type 으로 아래 중 하나를 명시하세요:\n{listing}")
+    target = candidates[0]
 
     print(f"삭제 대상: pinId={target['pinId']} type={target['pinType']} name={target.get('pinName')!r}")
     if not args.yes and input("정말 삭제할까요? (yes 입력): ").strip().lower() != "yes":
@@ -238,7 +258,7 @@ def cmd_delete(args: argparse.Namespace) -> None:
     time.sleep(5)
 
     after = fetch_pin_infos(member_id, lock["deviceId"], auth_header, auth_code)
-    still_there = any(p["pinId"] == args.pin_id for p in after)
+    still_there = any(p["pinId"] == target["pinId"] and p["pinType"] == target["pinType"] for p in after)
     print("결과:", "아직 남아있음(실패했거나 반영 지연 — 잠시 후 list로 재확인)" if still_there else "삭제 확인됨")
 
 
@@ -251,11 +271,14 @@ def build_parser() -> argparse.ArgumentParser:
                              "(매번 새 값을 쓰면 클라우드가 새 기기로 인식해 pin을 자동 발급함)")
 
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("list", help="등록된 pin 목록 조회(REST만, relay 불필요)")
+    l = sub.add_parser("list", help="등록된 pin 목록 조회(REST만, relay 불필요)")
+    l.add_argument("--raw", action="store_true", help="pinInfos 원본 JSON도 같이 덤프(pin 필드만 마스킹) — 이름 동기화 문제 진단용")
     sub.add_parser("status", help="membersdoorlocklist 원본 응답 그대로 덤프(REST만, relay 불필요)")
 
     d = sub.add_parser("delete", help="지정한 pinId 삭제(REST 조회 + relay observer로 injection)")
     d.add_argument("--pin-id", type=int, required=True)
+    d.add_argument("--pin-type", default=None,
+                    help="pinId가 여러 타입에 걸쳐 겹칠 때 구분용(예: RFC/FGP/MST) — 'list'로 확인")
     d.add_argument("--relay-host", required=True)
     d.add_argument("--relay-port", type=int, default=9883)
     d.add_argument("--sid", default=None, help="생략시 relay에서 잠깐 관측 시도")

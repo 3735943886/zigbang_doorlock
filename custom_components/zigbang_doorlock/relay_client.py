@@ -202,6 +202,13 @@ class RelayClient:
         self._ha_pin_tokens[tpid] = pin_token
         self._registered.add(tpid)
 
+    def mark_registered(self, tpid: str) -> None:
+        """REST 재조회(수동 새로고침)로 HA pin이 이미 락에 등록돼있는 걸 확인했을 때 호출 —
+        안 부르면 REST 시딩이 실패했던 상태로 남아있던 tpId가 다음 relay 트래픽에서
+        self-heal(_handle_message)에 의해 이미 있는 키를 불필요하게 다시 등록(408)해서
+        중복 pin을 만들 수 있다(실측 확인된 버그, 2026-09-22)."""
+        self._registered.add(tpid)
+
     def mark_registry_seed_ok(self) -> None:
         """REST 조회가 (재시작 이후 언젠가) 성공적으로 한 번이라도 끝나면 호출 — 그 뒤로는
         self-heal/lazy 등록이 더 이상 "락 상태를 모른 채 등록한다"고 경고하지 않는다."""

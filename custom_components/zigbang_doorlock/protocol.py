@@ -74,17 +74,23 @@ def extract_basic_attrgroup_patch(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def extract_pin_registry_patch(data: dict[str, Any]) -> dict[int, dict[str, Any]]:
-    """Basic-AttrGroup의 pinInfoXXX 필드들 -> {pinId: {pin_type, pin_name}}.
+def extract_pin_registry_patch(data: dict[str, Any]) -> dict[tuple[str, int], dict[str, Any]]:
+    """Basic-AttrGroup의 pinInfoXXX 필드들 -> {(pinType, pinId): {pin_id, pin_type, pin_name}}.
 
     공식앱이 IDPEVENT(622)의 pinId로 "무엇으로 열었는지" 표시이름을 찾을 때 쓰는 것과 같은
     레지스트리(PROTOCOL.md §9-1/§10, fixture 실측) — 부분갱신으로 오므로 호출측에서 누적merge 필요.
-    """
-    patch: dict[int, dict[str, Any]] = {}
+    pinId는 타입별로 독립적으로 매겨져 서로 겹칠 수 있어(api.py의 fetch_pin_registry 참조,
+    실측 확인된 버그 2026-09-22) pinId 하나만으로 키를 잡지 않고 (pinType, pinId) 조합을 쓴다."""
+    patch: dict[tuple[str, int], dict[str, Any]] = {}
     for key, value in data.items():
         if key.startswith("pinInfo") and isinstance(value, dict) and "pinId" in value:
-            patch[value["pinId"]] = {
-                "pin_type": value.get("pinType"),
+            pin_id = value["pinId"]
+            pin_type = value.get("pinType")
+            if pin_type is None:
+                continue
+            patch[(pin_type, pin_id)] = {
+                "pin_id": pin_id,
+                "pin_type": pin_type,
                 "pin_name": value.get("pinName") or None,
             }
     return patch

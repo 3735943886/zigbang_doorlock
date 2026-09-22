@@ -175,9 +175,16 @@ def _live_status_patch(lock: dict[str, Any]) -> dict[str, Any]:
     return {key: lock.get(key) for key in _LIVE_STATUS_FIELDS}
 
 
-def _strip_pin_tokens(registry: dict[int, dict[str, Any]]) -> dict[int, dict[str, Any]]:
-    """pin_token(원본 자격증명 값)은 절대 coordinator.data(엔티티가 읽는 공용 상태)에 안 둔다."""
-    return {pin_id: {"pin_type": info.get("pin_type"), "pin_name": info.get("pin_name")} for pin_id, info in registry.items()}
+def _strip_pin_tokens(
+    registry: dict[tuple[str, int], dict[str, Any]]
+) -> dict[tuple[str, int], dict[str, Any]]:
+    """pin_token(원본 자격증명 값)은 절대 coordinator.data(엔티티가 읽는 공용 상태)에 안 둔다.
+    pin_id는 남긴다 — IDPEVENT 처리에서 (pinType, pinId) 조합 키로 못 찾을 때 pin_id 단독으로
+    다시 찾는 폴백(_handle_relay_message 참조)에 필요."""
+    return {
+        key: {"pin_id": info.get("pin_id"), "pin_type": info.get("pin_type"), "pin_name": info.get("pin_name")}
+        for key, info in registry.items()
+    }
 
 
 async def _fetch_initial_cloud_state(
@@ -185,7 +192,7 @@ async def _fetch_initial_cloud_state(
     entry: ConfigEntry,
     locks_by_tpid: dict[str, dict[str, Any]],
     ha_pin_tokens: dict[str, str],
-) -> tuple[dict[str, dict[int, dict[str, Any]]], dict[str, dict[str, Any]], set[str], dict[str, str], bool]:
+) -> tuple[dict[str, dict[tuple[str, int], dict[str, Any]]], dict[str, dict[str, Any]], set[str], dict[str, str], bool]:
     """모듈 docstring 참조 — 실패해도 빈 결과로 degrade, 핵심기능(lock/sensor)엔 영향 없음.
     반환: (엔티티용 공개 레지스트리, tpId별 doorlockStatusVO 기반 라이브상태(api.py의
     fetch_doorlocks 반환 dict — locked/battery_raw/dummy_mode/use_magic_number/use_2way_auth/
@@ -198,7 +205,7 @@ async def _fetch_initial_cloud_state(
     2026-08-20). 마지막 bool(seed_ok)이 False면 이 조회 자체가 실패한 거라, RelayClient의
     self-heal/lazy 등록이 "락에 이미 이 이름의 키가 있었는지" 확인 없이 등록하게 된다 —
     relay_client.py의 registry_seed_ok 참조."""
-    public_registries: dict[str, dict[int, dict[str, Any]]] = {}
+    public_registries: dict[str, dict[tuple[str, int], dict[str, Any]]] = {}
     live_status_by_tpid: dict[str, dict[str, Any]] = {}
     already_registered: set[str] = set()
     adopted_tokens: dict[str, str] = {}
@@ -230,25 +237,26 @@ async def _fetch_initial_cloud_state(
     return public_registries, live_status_by_tpid, already_registered, adopted_tokens, seed_ok
 
 
-def _has_ha_pin(registry: dict[int, dict[str, Any]], ha_pin_token: str) -> bool:
+def _has_ha_pin(registry: dict[tuple[str, int], dict[str, Any]], ha_pin_token: str) -> bool:
     return any(info.get("pin_token") == ha_pin_token for info in registry.values())
 
 
-def _find_named_pin(registry: dict[int, dict[str, Any]], pin_name: str) -> dict[str, Any] | None:
+def _find_named_pin(registry: dict[tuple[str, int], dict[str, Any]], pin_name: str) -> dict[str, Any] | None:
     return next((info for info in registry.values() if info.get("pin_name") == pin_name and info.get("pin_token")), None)
 
 
-def _find_all_named_pins(registry: dict[int, dict[str, Any]], pin_name: str) -> list[tuple[int, str]]:
+def _find_all_named_pins(registry: dict[tuple[str, int], dict[str, Any]], pin_name: str) -> list[tuple[int, str]]:
     """이름이 pin_name 인 pin 전부 -> [(pinId, pin_token), ...]. "HA 키 초기화" 버튼이
-    지울 대상을 정확히 고르는 용도(_find_named_pin 은 하나만 리턴해서 중복 청소엔 안 맞음)."""
+    지울 대상을 정확히 고르는 용도(_find_named_pin 은 하나만 리턴해서 중복 청소엔 안 맞음).
+    registry 키는 (pinType, pinId)라 여기 리턴하는 pinId는 info["pin_id"]에서 뽑는다."""
     return [
-        (pin_id, info["pin_token"])
-        for pin_id, info in registry.items()
+        (info["pin_id"], info["pin_token"])
+        for info in registry.values()
         if info.get("pin_name") == pin_name and info.get("pin_token")
     ]
 
 
-def _warn_if_duplicate_ha_pins(registry: dict[int, dict[str, Any]], tp_id: str) -> None:
+def _warn_if_duplicate_ha_pins(registry: dict[tuple[str, int], dict[str, Any]], tp_id: str) -> None:
     """REST로 락의 실제 pin 목록을 확인할 때마다 호출 — 이름이 HA_PIN_NAME인 pin이 2개
     이상이면 경고만 하고 자동으로 지우지 않는다(삭제는 위험도가 높아서 "HA 키 초기화"
     버튼으로 사람이 직접 눌러야만 실행됨, button.py 참조)."""
@@ -269,7 +277,9 @@ async def async_refresh_cloud_data(hass: HomeAssistant, entry: ConfigEntry, tp_i
     REST 응답에 이미 이 값들이 다 있음, api.py의 fetch_doorlocks 참조). 여기선 실패를 삼키지
     않고 그대로 올려서 버튼을 누른 사용자에게 실패가 보이게 한다(시작시 자동시딩과 반대 정책).
     REST 로 다시 받아본 결과 HA pin 이 안 보이면(사용자가 앱에서 직접 지웠거나 락 초기화 등)
-    바로 재등록까지 한다 — 다음 unlock 을 기다리지 않음."""
+    바로 재등록까지 한다 — 다음 unlock 을 기다리지 않음. HA pin 이 이미 있는 걸로 확인되면
+    relay.mark_registered 로 그 사실을 알려서(시작시 REST 시딩이 실패했던 tpId라도) 다음
+    relay 트래픽에서 self-heal이 이미 있는 키를 또 등록해 중복을 만들지 않게 한다."""
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: ZigbangCoordinator = data["coordinator"]
     lock_info = data["locks"][tp_id]
@@ -289,6 +299,7 @@ async def async_refresh_cloud_data(hass: HomeAssistant, entry: ConfigEntry, tp_i
     _warn_if_duplicate_ha_pins(registry, tp_id)
 
     if _has_ha_pin(registry, lock_info["ha_pin_token"]):
+        relay.mark_registered(tp_id)
         return
 
     existing = _find_named_pin(registry, HA_PIN_NAME)
@@ -412,7 +423,15 @@ def _handle_relay_message(
             pin_info = None
             if pin_id is not None:
                 registry = coordinator.data.get(tp_id, {}).get("pin_registry", {})
-                pin_info = registry.get(pin_id)
+                # registry 키는 (pinType, pinId) — pinId는 타입별로 독립적으로 매겨져 타입이
+                # 다르면 겹칠 수 있다(api.py의 fetch_pin_registry 참조, 실측 확인된 버그
+                # 2026-09-22). access가 곧 pinType 코드인 물리 자격증명(RFC/FGP/MST/NFC)은
+                # 그 조합으로 바로 찾고, SVR처럼 access가 pinType이 아닌 경우만 pin_id
+                # 단독으로 스캔한다(여러 타입이 같은 pinId를 쓰면 여전히 모호할 수 있음 —
+                # 기존에도 있던 한계, pin_id 하나로만 키였을 때와 동일).
+                pin_info = registry.get((access, pin_id)) if access is not None else None
+                if pin_info is None:
+                    pin_info = next((info for info in registry.values() if info.get("pin_id") == pin_id), None)
 
             # 레지스트리의 pinType이 이번 이벤트의 access와 일치할 때만 그 자격증명으로 확정한다.
             # access 값 자체가 대부분 pinType 코드와 동일하게 오므로(실측 2026-08-20: RFC=카드/키태그,
@@ -465,18 +484,29 @@ def _merge_state(coordinator: ZigbangCoordinator, tp_id: str, patch: dict[str, A
     coordinator.async_set_updated_data(new_data)
 
 
-def _merge_pin_registry(coordinator: ZigbangCoordinator, tp_id: str, registry_patch: dict[int, dict[str, Any]]) -> None:
+def _merge_pin_registry(coordinator: ZigbangCoordinator, tp_id: str, registry_patch: dict[tuple[str, int], dict[str, Any]]) -> None:
     """relay 로부터 온 부분patch를 기존 레지스트리에 얹는다(union) — 삭제는 반영 못 함(그래서
-    button.py 의 수동새로고침은 이거 대신 _replace_pin_registry 를 씀)."""
+    button.py 의 수동새로고침은 이거 대신 _replace_pin_registry 를 씀).
+
+    필드 단위로 merge한다(patch 쪽 값이 None인 필드는 기존 값을 유지) — 통째로 replace하면
+    안 되는 이유: IDPEVENT(실제 언락) 메시지 자체에 그 pin의 pinInfoXXX가 이름 없이 같이 실려
+    오는 경우가 있는데(모듈 docstring 참조, 실측 확인된 사례), _handle_relay_message가 이
+    merge를 끝낸 직후 같은 메시지의 IDPEVENT 처리에서 방금 merge한 레지스트리를 바로 읽어
+    last_user_name을 채운다 — 통째로 replace하면 REST로 이미 알고 있던 이름이 바로 그 순간에
+    지워져서, method(예: "fingerprint")는 제대로 나오는데 이름만 빈 채로 뜬다(실측 확인,
+    2026-09-22)."""
     new_data = dict(coordinator.data)
     state = dict(new_data.get(tp_id, {}))
-    registry = {**state.get("pin_registry", {}), **registry_patch}
+    registry = dict(state.get("pin_registry", {}))
+    for key, patch_info in registry_patch.items():
+        existing = registry.get(key, {})
+        registry[key] = {**existing, **{field: value for field, value in patch_info.items() if value is not None}}
     state["pin_registry"] = registry
     new_data[tp_id] = state
     coordinator.async_set_updated_data(new_data)
 
 
-def _replace_pin_registry(coordinator: ZigbangCoordinator, tp_id: str, registry: dict[int, dict[str, Any]]) -> None:
+def _replace_pin_registry(coordinator: ZigbangCoordinator, tp_id: str, registry: dict[tuple[str, int], dict[str, Any]]) -> None:
     """REST 로 받은 전체 목록으로 통째로 교체 — 앱에서 pin 을 삭제한 경우도 정확히 반영."""
     new_data = dict(coordinator.data)
     state = dict(new_data.get(tp_id, {}))

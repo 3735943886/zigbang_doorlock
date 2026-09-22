@@ -146,10 +146,17 @@ class ZigbangCloudClient:
             )
         return [lock for lock in locks if lock["tp_id"]]
 
-    async def fetch_pin_registry(self, device_id: str) -> dict[int, dict[str, Any]]:
-        """등록된 pinId -> {pin_type, pin_name}. 앱이 지문/RF카드/임시키 화면마다 pinTypes 를
-        나눠 부르는 것(RFCardListViewModel="RFC", FingerprintListViewModel="FGP",
-        TempKeyListViewModel="MST,NFC,NUM,RFC,SDK")과 달리 한 번에 다 받으려고 전부 나열."""
+    async def fetch_pin_registry(self, device_id: str) -> dict[tuple[str, int], dict[str, Any]]:
+        """등록된 (pinType, pinId) -> {pin_id, pin_type, pin_name, pin_token}. 앱이 지문/RF카드/
+        임시키 화면마다 pinTypes 를 나눠 부르는 것(RFCardListViewModel="RFC",
+        FingerprintListViewModel="FGP", TempKeyListViewModel="MST,NFC,NUM,RFC,SDK")과 달리 한
+        번에 다 받으려고 전부 나열.
+
+        pinId는 타입마다 독립적으로 매겨지는 슬롯번호라 타입이 다르면 값이 겹친다(예: 카드
+        pinId=1과 지문 pinId=1이 동시에 존재 가능 — 실측 확인, 2026-09-22: 카드만 있을 땐 이름이
+        잘 보이다가 지문을 추가한 뒤로는 카드 이름이 사라짐, 지문이 같은 pinId를 써서 dict가
+        pinId 하나로만 키였을 때 서로 덮어썼던 게 원인). 그래서 키를 (pinType, pinId) 조합으로
+        쓴다 — pin_id만 쓰던 이전 버전과의 유일한 차이."""
         if self._member_id is None:
             await self.login()
 
@@ -162,13 +169,15 @@ class ZigbangCloudClient:
         }
         data = await self._request("GET", "v20/doorlockctrl/getdoorkeys", params=params)
 
-        registry: dict[int, dict[str, Any]] = {}
+        registry: dict[tuple[str, int], dict[str, Any]] = {}
         for pin in data.get("pinInfos", []) or []:
             pin_id = pin.get("pinId")
-            if pin_id is None:
+            pin_type = pin.get("pinType")
+            if pin_id is None or pin_type is None:
                 continue
-            registry[pin_id] = {
-                "pin_type": pin.get("pinType"),
+            registry[(pin_type, pin_id)] = {
+                "pin_id": pin_id,
+                "pin_type": pin_type,
                 "pin_name": pin.get("pinName") or pin.get("pinMemberNm") or None,
                 # 원본 pin 토큰값 — HA 자신의 영구키가 이미 등록돼있는지 내부적으로 대조하는 용도로만
                 # 쓰고(__init__.py) 절대 엔티티/속성으로 노출하지 않는다(민감한 자격증명 값).
