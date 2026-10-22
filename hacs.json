@@ -1,4 +1,5 @@
 {
   "name": "Zigbang Doorlock",
-  "render_readme": true
+  "render_readme": true,
+  "country": "KR"
 }
