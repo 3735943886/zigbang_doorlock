@@ -1,7 +1,6 @@
 {
   "domain": "zigbang_doorlock",
   "name": "Zigbang Doorlock",
-  "categories": ["security_safety.locks_access"],
   "codeowners": ["@3735943886"],
   "config_flow": true,
   "documentation": "https://github.com/3735943886/zigbang_doorlock",
