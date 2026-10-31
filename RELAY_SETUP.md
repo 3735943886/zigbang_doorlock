@@ -101,7 +101,7 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 6~7단계(리셋/재프로비저닝) 전에 떠있어야 하므로, 이 단계에서 바로 [8단계](#8-커스텀-컴포넌트-설치)의
 커스텀 컴포넌트 설치/설정을 먼저 하고 6단계로 넘어가세요.
 
-1. 인증서: 2단계에서 발급한 인증서를 HA 설정 폴더의 `zigbang_certs/`에 `fullchain.pem`,
+1. 인증서: 2단계에서 발급한 인증서를 HA 설정 폴더의 `zigbang_doorlock/certs/`에 `fullchain.pem`,
    `privkey.pem`으로 둡니다(내장 모드 기본 경로 — HA Container면 `/config`로 마운트된 호스트 폴더
    아래). 갱신 때마다 이 위치로 복사되게 5-A의 deploy hook처럼 설정해두세요. HAOS라면 대신 커뮤니티
    **"Let's Encrypt" App**으로 발급해도 됩니다 — `/ssl/fullchain.pem`, `/ssl/privkey.pem`에 놓이고
@@ -114,7 +114,7 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
    `--network=host`(권장 설치 방식)여야 포트가 바깥에 열립니다.
 4. 확인: HA 로그에 `내장 relay 시작(pid=..., mode=..., mqtts=..., udp=..., observer=127.0.0.1:...)`이 보이면 정상입니다. 기동에
    실패하면(인증서 없음, 포트 사용중 등) 통합구성요소가 "재시도 중" 상태로 남고 이유가 로그에 찍힙니다.
-   relay 자체 로그는 `<config>/zigbang_doorlock/relay/logs/`에도 남습니다(최근 5개만 보관).
+   relay 자체 로그는 `<config>/zigbang_doorlock/logs/`에도 남습니다(최근 5개만 보관).
 
 내장 모드에선 observer가 `127.0.0.1`의 임의 포트에만 열려 외부에 노출되지 않습니다 — 그래서
 `helper/manage_pins.py`처럼 HA 바깥에서 observer에 붙는 도구는 쓸 수 없습니다.
@@ -208,7 +208,7 @@ App의 `/data/rules/`를 직접 고쳐 쓰던 경우: 내장 relay는 패키지�
 
 주의:
 - 인증서를 App 전용 경로(`/data/certs/...` 등)에 뒀다면 HA에선 그 경로가 안 보입니다 — 두 파일을
-  `/config/zigbang_certs/`(내장 모드 기본 경로)로 복사하세요.
+  `/config/zigbang_doorlock/certs/`(내장 모드 기본 경로)로 복사하세요.
 - 포트나 `mode`를 내장 relay 기본값(18883/5683, `shadow`)과 다르게 쓰고 있었다면 내장 relay 폼의 **고급** 섹션에서
   같은 값으로 맞추세요(`proxy`/`shadow` 지원). `decloud`는 아직 내장 모드에서 지원하지 않습니다 — 필요하면
   Docker로 띄우고 "외부" 방식으로 연결하세요.
@@ -323,7 +323,7 @@ SoftAP에 먼저 붙여놓고 실행하는 게 아닙니다(SoftAP는 보통 인
 편한 쪽으로:
 ```bash
 docker logs -f zigbang-relay          # Docker(5-A)
-# 내장 모드(5-0): HA 로그 또는 <config>/zigbang_doorlock/relay/logs/
+# 내장 모드(5-0): HA 로그 또는 <config>/zigbang_doorlock/logs/
 
 # 또는 observer 포트를 직접 tap(로컬신뢰망에서, 9883이 열려있는 경우):
 mosquitto_sub -h <relay-host> -p 9883 -t '#' -v

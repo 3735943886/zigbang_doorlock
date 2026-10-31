@@ -52,7 +52,7 @@ HA App(Add-on)은 **지원 중단**됐습니다 — 기존 App 사용자는 내�
    등 등록정보) 갱신을 위해 다시 로그인합니다.
 2. **relay 방식**: 메뉴에서 선택합니다.
    - **내장**: relay 도메인(프로비저닝 때 락에 주입한 값)과 인증서/개인키 경로. 기본 경로는 HA 설정
-     폴더의 `zigbang_certs/fullchain.pem`, `zigbang_certs/privkey.pem`이고, HAOS에서 Let's Encrypt App이
+     폴더의 `zigbang_doorlock/certs/fullchain.pem`, `zigbang_doorlock/certs/privkey.pem`이고, HAOS에서 Let's Encrypt App이
      `/ssl/`에 인증서를 이미 만들어뒀으면 그 경로가 기본값으로 채워집니다. HA가 도어락용 포트(기본
      18883/TCP, 5683/UDP)를 직접 엽니다 — 같은 포트를 쓰는 relay 컨테이너가 같은 호스트에 떠있으면
      충돌하니 내리고 쓰세요. 접힌 **고급** 섹션에서 포트(다른 포트로 프로비저닝한 경우)와 모드

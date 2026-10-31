@@ -27,10 +27,12 @@ RELAY_MODE_EXTERNAL = "external"
 CONF_CERT_NAME = "cert_name"
 CONF_CERT_FILE = "cert_file"
 CONF_CERT_KEY = "cert_key"
-# 인증서 기본경로: HA 설정폴더 아래 zigbang_certs/(모든 설치방식에서 HA 가 보는 위치 — Docker 로 띄운
-# HA 엔 /config 만 마운트돼있는 경우가 많음). 단 HAOS 표준 공유경로(/ssl, 커뮤니티 Let's Encrypt App 이
-# 채우고 갱신까지 해줌)에 둘 다 이미 있으면 그쪽을 기본값으로 제안(config_flow._default_cert_paths).
-CERT_DIR = "zigbang_certs"
+# 이 통합의 데이터 폴더 <config>/zigbang_doorlock/ — certs/(인증서 기본경로), state/(내장 relay 의 shadow 재생
+# 캐시 replay.json), logs/(내장 relay 로그). HA 설정폴더 아래라 모든 설치방식에서 HA 가 봄(Docker 로 띄운 HA 엔
+# /config 만 마운트돼있는 경우가 많음). 단 HAOS 표준 공유경로(/ssl, 커뮤니티 Let's Encrypt App 이 채우고
+# 갱신까지 해줌)에 둘 다 이미 있으면 그쪽을 인증서 기본값으로 제안(config_flow._default_cert_paths).
+DATA_DIR = DOMAIN
+CERT_DIR = "certs"
 CERT_FILE_NAME = "fullchain.pem"
 CERT_KEY_NAME = "privkey.pem"
 HAOS_CERT_FILE = "/ssl/fullchain.pem"

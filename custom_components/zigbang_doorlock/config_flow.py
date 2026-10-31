@@ -35,6 +35,7 @@ from .const import (
     CONF_UDP_PORT,
     CONF_USERNAME,
     CERT_DIR,
+    DATA_DIR,
     CERT_FILE_NAME,
     CERT_KEY_NAME,
     DEFAULT_MQTTS_PORT,
@@ -65,10 +66,10 @@ _RELAY_MENU = [RELAY_MODE_EMBEDDED, RELAY_MODE_EXTERNAL]
 
 
 def _default_cert_paths(hass: HomeAssistant) -> tuple[str, str]:
-    """HAOS /ssl 에 둘 다 있으면 그쪽(Let's Encrypt App 이 갱신까지 해줌), 아니면 <config>/zigbang_certs/."""
+    """HAOS /ssl 에 둘 다 있으면 그쪽(Let's Encrypt App 이 갱신까지 해줌), 아니면 <config>/zigbang_doorlock/certs/."""
     if Path(HAOS_CERT_FILE).is_file() and Path(HAOS_CERT_KEY).is_file():
         return HAOS_CERT_FILE, HAOS_CERT_KEY
-    return hass.config.path(CERT_DIR, CERT_FILE_NAME), hass.config.path(CERT_DIR, CERT_KEY_NAME)
+    return hass.config.path(DATA_DIR, CERT_DIR, CERT_FILE_NAME), hass.config.path(DATA_DIR, CERT_DIR, CERT_KEY_NAME)
 
 
 def _embedded_schema(current: dict[str, Any], default_cert: tuple[str, str]) -> vol.Schema:

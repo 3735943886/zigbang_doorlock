@@ -20,7 +20,7 @@
       },
       "embedded": {
         "title": "내장 relay",
-        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
+        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_doorlock/certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
         "data": {
           "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
           "cert_file": "인증서(fullchain) 경로",
@@ -76,7 +76,7 @@
       },
       "embedded": {
         "title": "내장 relay",
-        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
+        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_doorlock/certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
         "data": {
           "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
           "cert_file": "인증서(fullchain) 경로",

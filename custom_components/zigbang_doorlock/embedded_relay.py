@@ -43,6 +43,7 @@ from .const import (
     CONF_MQTTS_PORT,
     CONF_ROUTE_MODE,
     CONF_UDP_PORT,
+    DATA_DIR,
     DEFAULT_MQTTS_PORT,
     DEFAULT_ROUTE_MODE,
     DEFAULT_UDP_PORT,
@@ -113,7 +114,7 @@ class EmbeddedRelay:
     def __init__(self, hass: HomeAssistant, config: EmbeddedConfig) -> None:
         self._hass = hass
         self.config = config
-        self._base_dir = Path(hass.config.path(DOMAIN, "relay"))
+        self._base_dir = Path(hass.config.path(DATA_DIR))
         self._bin: str | None = None
         self._env: dict[str, str] = {}
         self._proc: asyncio.subprocess.Process | None = None

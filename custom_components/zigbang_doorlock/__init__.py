@@ -27,7 +27,7 @@ import secrets
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -519,9 +519,12 @@ def _handle_relay_session(
         patch["relay_changed_at"] = dt_util.utcnow()
         if not online:
             # 유예가 끝나는 시점에 엔티티 available 을 다시 계산시킴(그 사이 재접속했으면 그대로 available).
-            entry.async_on_unload(
-                async_call_later(hass, RELAY_OFFLINE_GRACE + 1, lambda _now: coordinator.async_update_listeners())
-            )
+            # @callback 필수 — 일반 함수면 HA 가 워커 스레드에서 돌려서 async_write_ha_state 스레드 에러.
+            @callback
+            def _recheck_available(_now: Any) -> None:
+                coordinator.async_update_listeners()
+
+            entry.async_on_unload(async_call_later(hass, RELAY_OFFLINE_GRACE + 1, _recheck_available))
     if info.get("peer") and info["peer"] != state.get("relay_peer"):
         patch["relay_peer"] = info["peer"]
     if patch:

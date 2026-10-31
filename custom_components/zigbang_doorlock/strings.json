@@ -20,7 +20,7 @@
       },
       "embedded": {
         "title": "Embedded relay",
-        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is the zigbang_certs folder in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
+        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is zigbang_doorlock/certs in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
         "data": {
           "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
           "cert_file": "Certificate (fullchain) path",
@@ -76,7 +76,7 @@
       },
       "embedded": {
         "title": "Embedded relay",
-        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is the zigbang_certs folder in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
+        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is zigbang_doorlock/certs in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
         "data": {
           "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
           "cert_file": "Certificate (fullchain) path",
