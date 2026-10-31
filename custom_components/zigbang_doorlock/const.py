@@ -60,7 +60,7 @@ DEFAULT_ROUTE_MODE = ROUTE_MODE_SHADOW
 RELAY_OFFLINE_GRACE = 30
 
 # 내장 relay: PyPI 패키지 버전 = relay 바이너리 버전. upstream 은 docker/relay.toml.example 과 동일.
-RELAY_REQUIREMENT = "zigbang-relay==0.1.8"
+RELAY_REQUIREMENT = "zigbang-relay==0.1.9"
 UPSTREAM_MQTTS = "mqtttcp.homeiot.zigbang-iot.com:8883"
 UPSTREAM_UDP = "mqttudp.homeiot.zigbang-iot.com:5683"
 

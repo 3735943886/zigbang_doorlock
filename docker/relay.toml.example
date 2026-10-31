@@ -15,7 +15,7 @@ log_dir = "logs"
 cert_file = "certs/fullchain.pem"
 cert_key  = "certs/privkey.pem"
 cert_name = "relay.example.com"    # ← 실제 주입 도메인으로 변경
-upstream_insecure = true           # 실클라우드로 나갈 때 그쪽 cert 검증 안 함(기술부채, 낮은 우선순위)
+upstream_insecure = true           # 직방 클라우드 cert 검증 안 함. false=공인CA 검증(직방 cert가 2026-07 만료된 채라 현재 접속 실패)
 
 answered_ttl_secs = 120
 answered_cap = 8192
