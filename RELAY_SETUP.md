@@ -5,12 +5,13 @@
 보고** 그 relay를 띄우는 법부터 도어락 재프로비저닝, 커스텀 컴포넌트 설치까지 끝까지 설명합니다.
 
 가장 간단한 건 **내장 모드**입니다 — 이 통합구성요소가 relay를 HA 안에서 직접 실행하므로
-따로 띄울 게 없습니다([5-0](#5-0-내장-모드-권장)). 대신 HA 재시작 중엔 도어락이 잠깐
-오프라인이 됩니다. relay를 HA와 독립적으로 상시 띄워두고 싶다면 **Docker 컨테이너**로 띄우면 됩니다
-(HA와 같은 머신이 아니어도 됨, [5-A](#5-a-docker로-띄우기)).
+따로 띄울 게 없습니다([5-0](#5-0-내장-모드-권장)). 대신 HA가 재시작할 때마다 도어락이 잠시
+오프라인이 됩니다. relay를 HA와 독립적으로 상시 띄워두고 싶다면 **Docker 컨테이너**([5-A](#5-a-docker로-띄우기))
+또는 **바이너리 직접 실행**([5-B](#5-b-바이너리-직접-실행-systemd))으로 띄우면 됩니다(HA와 같은 머신이
+아니어도 됨).
 
 > **HA App(Add-on)은 지원 중단(deprecated)됐습니다** — 새로 설치하지 말고 내장 모드를 쓰세요.
-> 기존 App 사용자는 [5-B](#5-b-ha-appadd-on--지원-중단)의 이전 방법을 참고하세요(재프로비저닝 불필요).
+> 기존 App 사용자는 [5-C](#5-c-ha-appadd-on--지원-중단)의 이전 방법을 참고하세요(재프로비저닝 불필요).
 
 > relay/provision 바이너리와 Docker 이미지는 [`zigbang_relay`](https://github.com/3735943886/zigbang_relay)
 > 저장소에서 배포합니다(공개 저장소, 로그인 없이 [Releases](https://github.com/3735943886/zigbang_relay/releases)에서
@@ -24,7 +25,7 @@
 2. [TLS 인증서 발급](#2-tls-인증서-발급-lets-encrypt)
 3. [그 도메인이 실제로 relay까지 접속되는지 확인](#3-도메인이-relay까지-실제로-접속되는지-확인)
 4. [(대안) 이미 있는 리버스프록시 재활용](#4-대안-이미-리버스프록시가-있는-ha-환경이라면)
-5. [relay 띄우기 — 내장 또는 Docker](#5-relay-띄우기--내장-또는-docker)
+5. [relay 띄우기 — 내장, Docker 또는 바이너리](#5-relay-띄우기--내장-docker-또는-바이너리)
 6. [도어락을 재연동 모드로 리셋](#6-도어락을-재연동-모드로-리셋)
 7. [도어락을 이 relay로 재프로비저닝](#7-도어락을-이-relay로-재프로비저닝)
 8. [커스텀 컴포넌트 설치](#8-커스텀-컴포넌트-설치)
@@ -79,9 +80,12 @@ relay를 집/인트라넷 안에 두면, 도메인이 가리키는 공인 IP로 
 ## 4. (대안) 이미 리버스프록시가 있는 HA 환경이라면
 
 Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 물려두고 인증서도
-관리하고 있다면, 새 도메인/인증서를 따로 준비하지 않고 **그 도메인에 relay의 포트만 얹어서**
-재활용할 수 있습니다(TLS 종료를 리버스프록시가 대신 하고, relay의 `18883`/`5683`으로 스트림
-전달). 이 경우 1~2단계는 건너뛰고 5단계로 바로 가면 됩니다.
+관리하고 있다면, 새 도메인/인증서를 따로 발급하지 않고 **그 도메인에 relay의 포트만 얹어서**
+재활용할 수 있습니다. 이 경우 1~2단계의 발급은 건너뛰고 5단계로 바로 가면 됩니다.
+
+단, relay의 `18883`은 TLS를 **직접** 받는 포트입니다 — 프록시에서 TLS를 끝내고 평문으로 넘기면
+동작하지 않습니다. 프록시는 `18883`/`5683`을 **TCP/UDP 스트림 그대로(TLS 패스스루)** 전달하고,
+relay에는 그 도메인의 인증서(프록시가 관리하는 Let's Encrypt 인증서 파일)를 복사해서 넣어주세요.
 
 **단, 보안 주의**: 이 relay는 원래 인터넷에 노출할 목적이 아니라 "도어락 하나가 접속해오는
 전용 엔드포인트"입니다. 기존 HA 리버스프록시에 얹으면 그 프록시가 이미 노출하고 있는
@@ -92,7 +96,7 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 - `18883`(MQTTS)/`5683`(UDP) 스트림 전달용 포트만 최소한으로 열고, 가능하면 소스 IP 제한
   (도어락이 실제로 나가는 IP만 허용) 등 프록시단 접근제어를 추가로 고려하세요.
 
-## 5. relay 띄우기 — 내장 또는 Docker
+## 5. relay 띄우기 — 내장, Docker 또는 바이너리
 
 ### 5-0. 내장 모드 (권장)
 
@@ -103,7 +107,8 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 
 1. 인증서: 2단계에서 발급한 인증서를 HA 설정 폴더의 `zigbang_doorlock/certs/`에 `fullchain.pem`,
    `privkey.pem`으로 둡니다(내장 모드 기본 경로 — HA Container면 `/config`로 마운트된 호스트 폴더
-   아래). 갱신 때마다 이 위치로 복사되게 5-A의 deploy hook처럼 설정해두세요. HAOS라면 대신 커뮤니티
+   아래). 다른 이름/경로여도 PEM 형식이면 되고, 설정에서 그 경로를 입력하면 됩니다. 갱신 때마다
+   이 위치로 복사되게 5-A의 deploy hook처럼 설정해두세요(복사 대상 경로만 바꾸면 됨). HAOS라면 대신 커뮤니티
    **"Let's Encrypt" App**으로 발급해도 됩니다 — `/ssl/fullchain.pem`, `/ssl/privkey.pem`에 놓이고
    갱신도 App이 해주며, 이 경우 그 경로가 기본값으로 자동 제안됩니다.
 2. 통합구성요소 설정 → relay 방식 **"내장"** → relay 도메인(1단계)과 인증서/개인키 경로 확인.
@@ -115,9 +120,15 @@ Nginx Proxy Manager, Traefik, Caddy 등으로 이미 HA를 외부 도메인에 �
 4. 확인: HA 로그에 `내장 relay 시작(pid=..., mode=..., mqtts=..., udp=..., observer=127.0.0.1:...)`이 보이면 정상입니다. 기동에
    실패하면(인증서 없음, 포트 사용중 등) 통합구성요소가 "재시도 중" 상태로 남고 이유가 로그에 찍힙니다.
    relay 자체 로그는 `<config>/zigbang_doorlock/logs/`에도 남습니다(최근 5개만 보관).
+   도어락이 실제로 붙었는지는 도어락 기기의 **"relay 연결"** 진단 센서로 볼 수 있습니다.
 
 내장 모드에선 observer가 `127.0.0.1`의 임의 포트에만 열려 외부에 노출되지 않습니다 — 그래서
 `helper/manage_pins.py`처럼 HA 바깥에서 observer에 붙는 도구는 쓸 수 없습니다.
+
+**HA 재시작과 도어락 재접속**: relay가 HA와 함께 내려갔다 올라오므로, HA를 재시작할 때마다 도어락은
+relay가 다시 뜬 뒤 **자체 재접속 대기 시간만큼 잠시 늦게** 다시 붙습니다. HA가 오래 꺼져있었다면
+도어락이 절전(sleep) 상태에 들어가 더 오래 걸릴 수 있는데, **문을 열었다 닫거나 키패드를 누르는 등
+도어락을 직접 조작**하면 깨어나면서 바로 재접속합니다.
 
 ### 5-A. Docker로 띄우기
 
@@ -138,8 +149,10 @@ sudo install -m 0644 /etc/letsencrypt/live/relay.example.com/fullchain.pem /opt/
 sudo install -m 0640 /etc/letsencrypt/live/relay.example.com/privkey.pem   /opt/zigbang-relay/certs/
 ```
 
-`/opt/zigbang-relay/relay.toml`을 열어 `cert_name`(← 실제 발급받은 도메인)과 두 `upstream`
-(실제 직방 클라우드 브로커 주소)을 채워넣습니다. `rules/`는 그대로 두면 됩니다 — 락↔클라우드
+`/opt/zigbang-relay/relay.toml`을 열어 `cert_name`을 실제 발급받은 도메인으로 바꿉니다(두 `upstream`은
+실제 직방 클라우드 브로커 주소로 이미 채워져 있음). 각 `[[route]]`의 `mode`는 예시 파일 기본값이
+`proxy`(그대로 중계만)이고, 직방 클라우드 장애 때도 relay가 도어락에 대신 응답하게 하려면 `shadow`로
+바꾸세요(내장 모드의 기본값). `rules/`는 그대로 두면 됩니다 — 락↔클라우드
 메시지에 어떻게 응답할지 정하는 스크립트 디렉터리로(안의 `*.rhai`를 파일명 알파벳순으로 전부 불러 씀),
 **mtime 감시로 핫리로드**되므로 나중에 갱신해도 컨테이너 재시작이 필요 없습니다.
 
@@ -153,7 +166,7 @@ sudo install -m 0640 /etc/letsencrypt/live/relay.example.com/privkey.pem   /opt/
 
 #### 5-A-2. 컨테이너 실행
 
-이미지는 직접 빌드할 필요 없이 Docker Hub에서 pull합니다(멀티아치: amd64+arm64):
+이미지는 직접 빌드할 필요 없이 Docker Hub에서 pull합니다(멀티아치: amd64/arm64/armv7/armv6):
 
 ```bash
 docker pull 3735943886/zigbang-relay:stable
@@ -165,8 +178,9 @@ docker run -d --restart=always --name zigbang-relay \
   3735943886/zigbang-relay:stable
 ```
 
-- `--user $(id -u):$(id -g)`로 호스트에서 `/opt/zigbang-relay`를 소유한 유저 그대로 넘기면
-  이미지 기본 UID(10001)와 무관하게 쓰기(state/log)가 바로 됩니다.
+- 이미지 기본 실행 유저는 root입니다. `--user $(id -u):$(id -g)`로 `/opt/zigbang-relay`를 소유한
+  호스트 유저를 넘겨 root가 아닌 유저로 돌리는 걸 권장합니다(그 유저가 `certs/privkey.pem`을 읽을 수
+  있어야 함).
 - `-p 9883`(평문 관찰자 포트)은 **로컬신뢰망에서만** 접근 가능하게 방화벽으로 반드시 막으세요
   (이 저장소의 통합구성요소도, `helper/manage_pins.py`도 이 포트로 접속합니다 — 인터넷엔
   절대 노출 금지).
@@ -190,7 +204,49 @@ fi
 **컨테이너 재시작 없이** 새 인증서를 바로 반영하므로 이 훅에 `docker restart`를 넣을 필요조차
 없습니다.
 
-### 5-B. HA App(Add-on) — 지원 중단
+### 5-B. 바이너리 직접 실행 (systemd)
+
+Docker 없이 정적 바이너리 하나로 띄울 수도 있습니다. 디렉터리 레이아웃은 5-A-1과 똑같이 준비하고
+(`/opt/zigbang-relay/` 아래 `relay.toml`, `rules/`, `certs/`, `state/`, `logs/`), 바이너리만 그 안에 둡니다:
+
+```bash
+# zigbang_relay Releases에서 아키텍처에 맞는 relay 바이너리(relay-linux-amd64/arm64/armv7/armv6)
+curl -L -o /opt/zigbang-relay/relay \
+  https://github.com/3735943886/zigbang_relay/releases/latest/download/relay-linux-arm64
+chmod +x /opt/zigbang-relay/relay
+cd /opt/zigbang-relay && ./relay relay.toml   # 포그라운드로 먼저 확인(Ctrl+C로 종료)
+```
+
+상주시키려면 systemd 유닛 `/etc/systemd/system/zigbang-relay.service`:
+```ini
+[Unit]
+Description=Zigbang doorlock relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User는 /opt/zigbang-relay 소유 유저로 (systemd는 줄 끝 주석을 지원하지 않으니 주석은 따로 줄에)
+User=pi
+WorkingDirectory=/opt/zigbang-relay
+ExecStart=/opt/zigbang-relay/relay relay.toml
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now zigbang-relay
+journalctl -u zigbang-relay -f       # 로그 확인
+```
+
+포트는 전부 1024 이상이라 root 권한이 필요 없습니다. 9883(observer)은 5-A와 마찬가지로 로컬신뢰망
+밖에서 접근 못하게 막고, 인증서 자동 갱신도 5-A의 deploy hook을 그대로 쓰면 됩니다(재시작 불필요).
+relay가 bind 실패 등으로 죽으면 에러로 종료하므로 `Restart=always`가 다시 띄웁니다.
+
+### 5-C. HA App(Add-on) — 지원 중단
 
 HA App은 **지원 중단(deprecated)**됐습니다 — 새로 설치하지 말고 [5-0 내장 모드](#5-0-내장-모드-권장)를
 쓰세요. 기존 App은 당분간 계속 동작하지만 새 기능은 추가되지 않습니다.
@@ -245,8 +301,10 @@ relay가 5단계까지 실제로 응답 가능한 상태로 떠있는지 확인�
 |---|---|
 | Linux x86-64(노트북 등) | `provision-linux-amd64` |
 | Linux ARM64 | `provision-linux-arm64` |
+| Linux ARM 32비트(라즈베리파이 등) | `provision-linux-armv7` / `provision-linux-armv6` |
 | iPhone(iSH) / 32비트 x86 리눅스 | `provision-linux-i686` |
-| Windows x86-64 | `provision-windows-amd64.exe` |
+| macOS (Intel / Apple Silicon) | `provision-macos-amd64` / `provision-macos-arm64` |
+| Windows x86-64 | `provision-windows-amd64.zip`(압축 풀면 `provision.exe`) |
 
 Linux/macOS/iSH면 실행권한을 줍니다: `chmod +x provision-linux-amd64`.
 
@@ -322,10 +380,11 @@ SoftAP에 먼저 붙여놓고 실행하는 게 아닙니다(SoftAP는 보통 인
 찍힙니다. 그 직후 5단계에서 띄운 relay에 락 트래픽이 실제로 들어오는지 확인하세요 — 아무거나
 편한 쪽으로:
 ```bash
+# 내장 모드(5-0): 도어락 기기의 "relay 연결" 센서, HA 로그 또는 <config>/zigbang_doorlock/logs/
 docker logs -f zigbang-relay          # Docker(5-A)
-# 내장 모드(5-0): HA 로그 또는 <config>/zigbang_doorlock/logs/
+journalctl -u zigbang-relay -f        # 바이너리 직접 실행(5-B)
 
-# 또는 observer 포트를 직접 tap(로컬신뢰망에서, 9883이 열려있는 경우):
+# 또는 observer 포트를 직접 tap(외부 relay에서 9883이 열려있는 경우 — 내장 모드는 불가):
 mosquitto_sub -h <relay-host> -p 9883 -t '#' -v
 ```
 락 트래픽이 여기 찍히기 시작하면(보통 몇 초~하트비트 주기 이내) 완전히 성공한 것입니다 —
@@ -340,13 +399,13 @@ mosquitto_sub -h <relay-host> -p 9883 -t '#' -v
 ## 8. 커스텀 컴포넌트 설치
 
 > **내장 모드(5-0)**라면 이 단계는 이미 5단계에서 했습니다 — relay 방식으로 "내장"을 고르고
-> 도메인/인증서 경로만 입력하면 됩니다. 아래는 외부 relay(5-A)일 때입니다.
+> 도메인/인증서 경로만 입력하면 됩니다. 아래는 외부 relay(5-A/5-B)일 때입니다.
 
 relay가 락 트래픽을 실제로 받고 있는 게 확인되면, 이제 이 저장소(HA 커스텀 컴포넌트)를
 설치할 차례입니다 — [README.md의 "설치"/"설정" 섹션](README.md#설치) 참조. 설정 단계에서
 relay 방식으로 **"외부"**를 고르고 **relay 서버 host:port**를 입력합니다(`18883`이 아니라 관찰 포트인 `9883`):
 
-- **Docker(5-A)**로 띄웠다면 컨테이너를 실행한 호스트의 IP:9883
-- (지원 중단) **App(5-B)**을 아직 쓰고 있다면 기본적으로 HA 내부 도커망에서만 접근 가능합니다 — 같은 HA 안의
+- **Docker(5-A)/바이너리(5-B)**로 띄웠다면 relay를 실행한 호스트의 IP:9883
+- (지원 중단) **App(5-C)**을 아직 쓰고 있다면 기본적으로 HA 내부 도커망에서만 접근 가능합니다 — 같은 HA 안의
   커스텀 컴포넌트는 문제 없이 닿지만, 정확한 내부 호스트명이 궁금하면 HA의 app 간 통신 관련
   공식 문서를 참고하세요(app slug: `zigbang_relay`).
