@@ -36,9 +36,6 @@ from . import embedded_relay
 from .api import ZigbangCloudClient
 from .const import (
     ACCESS_LABELS,
-    CONF_CERT_FILE,
-    CONF_CERT_KEY,
-    CONF_CERT_NAME,
     CONF_HOST,
     CONF_IMEI,
     CONF_LOCKS,
@@ -371,9 +368,7 @@ async def _async_relay_endpoint(hass: HomeAssistant, entry: ConfigEntry) -> tupl
     if conf.get(CONF_RELAY_MODE) != RELAY_MODE_EMBEDDED:
         return (*_relay_target(entry), *_relay_auth(entry))
     try:
-        port = await embedded_relay.async_acquire(
-            hass, entry.entry_id, conf[CONF_CERT_NAME], conf[CONF_CERT_FILE], conf[CONF_CERT_KEY]
-        )
+        port = await embedded_relay.async_acquire(hass, entry.entry_id, embedded_relay.EmbeddedConfig.from_conf(conf))
     except embedded_relay.EmbeddedRelayError as err:
         raise ConfigEntryNotReady(str(err)) from err
     # 이후 단계에서 setup 이 실패해도(NotReady 포함) on_unload 는 불리므로 refcount 가 안 샌다.

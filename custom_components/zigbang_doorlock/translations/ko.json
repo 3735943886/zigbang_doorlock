@@ -20,11 +20,27 @@
       },
       "embedded": {
         "title": "내장 relay",
-        "description": "HA가 도어락용으로 18883/TCP, 5683/UDP 포트를 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요(Let's Encrypt App이 /ssl/fullchain.pem, /ssl/privkey.pem에 만들어 줍니다).",
+        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
         "data": {
           "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
           "cert_file": "인증서(fullchain) 경로",
           "cert_key": "개인키 경로"
+        },
+        "sections": {
+          "advanced": {
+            "name": "고급",
+            "description": "도어락을 다른 포트로 프로비저닝했거나 shadow 모드를 쓰려는 경우에만 바꾸세요.",
+            "data": {
+              "mqtts_port": "MQTTS 포트 (TCP)",
+              "udp_port": "UDP 홀펀치 포트",
+              "route_mode": "relay 모드"
+            },
+            "data_description": {
+              "mqtts_port": "프로비저닝 때 쓴 --service-port와 같아야 합니다.",
+              "udp_port": "프로비저닝 때 쓴 --service-port2와 같아야 합니다.",
+              "route_mode": "proxy: 그대로 중계만. shadow: 직방 클라우드가 끊겼을 때 relay가 도어락에 대신 응답."
+            }
+          }
         }
       },
       "external": {
@@ -60,11 +76,27 @@
       },
       "embedded": {
         "title": "내장 relay",
-        "description": "HA가 도어락용으로 18883/TCP, 5683/UDP 포트를 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요(Let's Encrypt App이 /ssl/fullchain.pem, /ssl/privkey.pem에 만들어 줍니다).",
+        "description": "HA가 도어락용 포트(기본 18883/TCP, 5683/UDP)를 직접 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요. 기본 위치는 HA 설정 폴더의 zigbang_certs 폴더이고, HAOS에서 Let's Encrypt App을 쓰면 /ssl 경로가 자동으로 채워집니다.",
         "data": {
           "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
           "cert_file": "인증서(fullchain) 경로",
           "cert_key": "개인키 경로"
+        },
+        "sections": {
+          "advanced": {
+            "name": "고급",
+            "description": "도어락을 다른 포트로 프로비저닝했거나 shadow 모드를 쓰려는 경우에만 바꾸세요.",
+            "data": {
+              "mqtts_port": "MQTTS 포트 (TCP)",
+              "udp_port": "UDP 홀펀치 포트",
+              "route_mode": "relay 모드"
+            },
+            "data_description": {
+              "mqtts_port": "프로비저닝 때 쓴 --service-port와 같아야 합니다.",
+              "udp_port": "프로비저닝 때 쓴 --service-port2와 같아야 합니다.",
+              "route_mode": "proxy: 그대로 중계만. shadow: 직방 클라우드가 끊겼을 때 relay가 도어락에 대신 응답."
+            }
+          }
         }
       },
       "external": {
@@ -140,6 +172,14 @@
       },
       "away_indoor_armed": {
         "name": "외출 시 실내방범 모드"
+      }
+    }
+  },
+  "selector": {
+    "route_mode": {
+      "options": {
+        "proxy": "proxy (그대로 중계, 기본)",
+        "shadow": "shadow (클라우드 장애 시 로컬 대신응답)"
       }
     }
   }

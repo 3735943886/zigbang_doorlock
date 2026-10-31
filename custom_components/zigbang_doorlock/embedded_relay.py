@@ -27,6 +27,7 @@ import json
 import logging
 import re
 import socket
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +37,17 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.requirements import async_process_requirements
 
 from .const import (
+    CONF_CERT_FILE,
+    CONF_CERT_KEY,
+    CONF_CERT_NAME,
+    CONF_MQTTS_PORT,
+    CONF_ROUTE_MODE,
+    CONF_UDP_PORT,
+    DEFAULT_MQTTS_PORT,
+    DEFAULT_UDP_PORT,
     DOMAIN,
-    EMBEDDED_LISTEN_MQTTS,
-    EMBEDDED_LISTEN_UDP,
     RELAY_REQUIREMENT,
+    ROUTE_MODE_PROXY,
     UPSTREAM_MQTTS,
     UPSTREAM_UDP,
 )
@@ -56,6 +64,28 @@ _LINE_PREFIX = re.compile(r"^\[\s*\d+ms\]\s*")
 
 class EmbeddedRelayError(HomeAssistantError):
     """내장 relay 를 못 띄움(패키지 설치 실패, cert 없음, 포트 사용중 등)."""
+
+
+@dataclass(frozen=True)
+class EmbeddedConfig:
+    cert_name: str
+    cert_file: str
+    cert_key: str
+    mqtts_port: int = DEFAULT_MQTTS_PORT
+    udp_port: int = DEFAULT_UDP_PORT
+    route_mode: str = ROUTE_MODE_PROXY
+
+    @classmethod
+    def from_conf(cls, conf: dict[str, Any]) -> EmbeddedConfig:
+        """entry.data+options(평평한 dict)에서. 고급설정 키가 없는 예전 entry 는 기본값."""
+        return cls(
+            cert_name=conf[CONF_CERT_NAME],
+            cert_file=conf[CONF_CERT_FILE],
+            cert_key=conf[CONF_CERT_KEY],
+            mqtts_port=conf.get(CONF_MQTTS_PORT, DEFAULT_MQTTS_PORT),
+            udp_port=conf.get(CONF_UDP_PORT, DEFAULT_UDP_PORT),
+            route_mode=conf.get(CONF_ROUTE_MODE, ROUTE_MODE_PROXY),
+        )
 
 
 def _free_local_port() -> int:
@@ -80,11 +110,9 @@ def _missing_cert_files(cert_file: str, cert_key: str) -> list[str]:
 
 
 class EmbeddedRelay:
-    def __init__(self, hass: HomeAssistant, cert_name: str, cert_file: str, cert_key: str) -> None:
+    def __init__(self, hass: HomeAssistant, config: EmbeddedConfig) -> None:
         self._hass = hass
-        self._cert_name = cert_name
-        self._cert_file = cert_file
-        self._cert_key = cert_key
+        self.config = config
         self._base_dir = Path(hass.config.path(DOMAIN, "relay"))
         self._bin: str | None = None
         self._env: dict[str, str] = {}
@@ -100,19 +128,26 @@ class EmbeddedRelay:
             "rules_file": rules_dir,
             "replay_store": str(self._base_dir / "state" / "replay.json"),
             "log_dir": str(self._base_dir / "logs"),
-            "cert_file": self._cert_file,
-            "cert_key": self._cert_key,
-            "cert_name": self._cert_name,
+            "cert_file": self.config.cert_file,
+            "cert_key": self.config.cert_key,
+            "cert_name": self.config.cert_name,
             "upstream_insecure": True,
             "route": [
-                {"name": "mqtts", "proto": "mqtts", "mode": "proxy", "listen": EMBEDDED_LISTEN_MQTTS, "upstream": UPSTREAM_MQTTS},
-                {"name": "holepunch", "proto": "udp", "mode": "proxy", "listen": EMBEDDED_LISTEN_UDP, "upstream": UPSTREAM_UDP},
+                {
+                    "name": "mqtts",
+                    "proto": "mqtts",
+                    "mode": self.config.route_mode,
+                    "listen": f"0.0.0.0:{self.config.mqtts_port}",
+                    "upstream": UPSTREAM_MQTTS,
+                },
+                # UDP 홀펀치는 모드와 무관하게 상태기반 NAT 릴레이뿐(relay transport.rs run_udp).
+                {"name": "holepunch", "proto": "udp", "mode": "proxy", "listen": f"0.0.0.0:{self.config.udp_port}", "upstream": UPSTREAM_UDP},
             ],
         }
         return json.dumps(cfg)
 
     async def start(self) -> None:
-        missing = await self._hass.async_add_executor_job(_missing_cert_files, self._cert_file, self._cert_key)
+        missing = await self._hass.async_add_executor_job(_missing_cert_files, self.config.cert_file, self.config.cert_key)
         if missing:
             # relay 에 그대로 넘기면 자체서명 cert 로 이 경로들을 덮어써버린다(모듈 docstring 참조).
             raise EmbeddedRelayError(f"인증서 파일 없음: {', '.join(missing)}")
@@ -133,7 +168,10 @@ class EmbeddedRelay:
             raise EmbeddedRelayError("relay 기동 실패: " + " / ".join(failures))
 
         self._supervisor = self._hass.async_create_background_task(self._supervise(), f"{DOMAIN}_embedded_relay")
-        _LOGGER.info("내장 relay 시작(pid=%s, observer=127.0.0.1:%s)", self._proc.pid, self.observer_port)
+        _LOGGER.info(
+            "내장 relay 시작(pid=%s, mode=%s, mqtts=%s, udp=%s, observer=127.0.0.1:%s)",
+            self._proc.pid, self.config.route_mode, self.config.mqtts_port, self.config.udp_port, self.observer_port,
+        )
 
     async def _spawn_and_check(self) -> list[str]:
         """relay 를 띄우고 기동 직후 _STARTUP_GRACE 동안 `✗ FAIL` 줄/조기종료를 모아 반환(빈 리스트=정상)."""
@@ -218,13 +256,13 @@ class EmbeddedRelay:
         _LOGGER.info("내장 relay 종료")
 
 
-async def async_acquire(hass: HomeAssistant, entry_id: str, cert_name: str, cert_file: str, cert_key: str) -> int:
+async def async_acquire(hass: HomeAssistant, entry_id: str, config: EmbeddedConfig) -> int:
     """entry 를 내장 relay 사용자로 등록(필요하면 기동)하고 observer 포트를 반환."""
     shared = hass.data.setdefault(_DATA_KEY, {"lock": asyncio.Lock(), "relay": None, "users": set()})
     async with shared["lock"]:
         relay: EmbeddedRelay | None = shared["relay"]
         if relay is None:
-            relay = EmbeddedRelay(hass, cert_name, cert_file, cert_key)
+            relay = EmbeddedRelay(hass, config)
             await relay.start()
             shared["relay"] = relay
 
@@ -236,8 +274,8 @@ async def async_acquire(hass: HomeAssistant, entry_id: str, cert_name: str, cert
                     await relay.stop()
 
             shared["unsub_stop"] = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _on_stop)
-        elif (cert_name, cert_file, cert_key) != (relay._cert_name, relay._cert_file, relay._cert_key):
-            _LOGGER.warning("내장 relay 가 이미 다른 entry 설정으로 떠있어 이 entry 의 cert 설정은 무시됨")
+        elif config != relay.config:
+            _LOGGER.warning("내장 relay 가 이미 다른 entry 설정으로 떠있어 이 entry 의 내장 relay 설정은 무시됨")
         shared["users"].add(entry_id)
         return relay.observer_port
 

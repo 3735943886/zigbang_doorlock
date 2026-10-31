@@ -5,7 +5,7 @@
 > server and sends remote unlock commands through that relay, so it works without the cloud REST API.
 > The relay can run embedded (the integration starts it inside Home Assistant from the
 > [`zigbang-relay`](https://pypi.org/project/zigbang-relay/) PyPI package) or externally as a Docker
-> container / HA App. See [RELAY_SETUP.md](RELAY_SETUP.md) for setting up the relay (Korean).
+> container (the HA App is deprecated). See [RELAY_SETUP.md](RELAY_SETUP.md) for setting up the relay (Korean).
 
 직방(삼성SDS) 스마트 도어락을 Home Assistant에 연동하는 커스텀 컴포넌트.
 클라우드 폴링이 아니라 `zigbang` 로컬 relay 서버(observer 포트)를 확인해서 상태를 갱신하고,
@@ -15,7 +15,7 @@
 
 `zigbang-relay`(락↔클라우드 로컬 중계)가 필요합니다. **도메인/인증서 준비 → relay 띄우기 →
 도어락 리셋 → 재프로비저닝**까지 전 과정을 이 저장소만 보고 따라할 수 있도록
-[RELAY_SETUP.md](RELAY_SETUP.md)에 처음부터 끝까지 정리해뒀습니다. relay는 세 가지 방식 중 하나로 띄웁니다:
+[RELAY_SETUP.md](RELAY_SETUP.md)에 처음부터 끝까지 정리해뒀습니다. relay는 두 가지 방식 중 하나로 띄웁니다:
 
 - **내장(권장)**: 이 통합구성요소가 relay를 HA 안에서 직접 실행합니다 — 별도 Docker/App 불필요,
   설정에서 도메인과 인증서 경로만 입력. 단 relay가 HA와 같이 뜨고 내려가므로 **HA 재시작 중엔
@@ -25,11 +25,13 @@
 - **외부 — Docker 컨테이너**(HA와 같은 머신일 필요 없음, host:port만 설정에 입력). 이미지는
   [Docker Hub](https://hub.docker.com/r/3735943886/zigbang-relay)에 공개돼있고, 필요한 설정 파일은
   [`docker/`](docker/)에 들어있습니다. 바이너리를 직접 systemd 등으로 띄워도 됩니다.
-- **외부 — HA App(Add-on)**.
+
+HA App(Add-on)은 **지원 중단**됐습니다 — 기존 App 사용자는 내장 모드로 옮기세요(재프로비저닝
+불필요, [RELAY_SETUP.md 5-B](RELAY_SETUP.md#5-b-ha-appadd-on--지원-중단)).
 
 외부 방식은 relay가 HA 재시작과 무관하게 계속 떠있다는 장점이 있습니다.
 
-`provision`/`relay` 바이너리와 app 저장소는 [zigbang_relay](https://github.com/3735943886/zigbang_relay)
+`provision`/`relay` 바이너리와 (지원 중단된) app 저장소는 [zigbang_relay](https://github.com/3735943886/zigbang_relay)
 
 ## 설치
 
@@ -49,12 +51,15 @@
    가져오는 데 씁니다. 이후 상시 폴링은 안 하지만, **HA(재)시작마다 1회** pin 레지스트리(카드/지문
    등 등록정보) 갱신을 위해 다시 로그인합니다.
 2. **relay 방식**: 메뉴에서 선택합니다.
-   - **내장**: relay 도메인(프로비저닝 때 락에 주입한 값)과 인증서/개인키 경로(기본
-     `/ssl/fullchain.pem`, `/ssl/privkey.pem`). HA가 18883/TCP, 5683/UDP를 직접 엽니다 — 같은 포트를
-     쓰는 relay App/컨테이너가 같은 호스트에 떠있으면 충돌하니 내리고 쓰세요.
+   - **내장**: relay 도메인(프로비저닝 때 락에 주입한 값)과 인증서/개인키 경로. 기본 경로는 HA 설정
+     폴더의 `zigbang_certs/fullchain.pem`, `zigbang_certs/privkey.pem`이고, HAOS에서 Let's Encrypt App이
+     `/ssl/`에 인증서를 이미 만들어뒀으면 그 경로가 기본값으로 채워집니다. HA가 도어락용 포트(기본
+     18883/TCP, 5683/UDP)를 직접 엽니다 — 같은 포트를 쓰는 relay 컨테이너가 같은 호스트에 떠있으면
+     충돌하니 내리고 쓰세요. 접힌 **고급** 섹션에서 포트(다른 포트로 프로비저닝한 경우)와 모드
+     (`proxy`/`shadow`)를 바꿀 수 있습니다.
    - **외부**: observer 포트의 host:port(+선택적 relay 사용자명/비밀번호).
 
-   나중에 통합구성요소 옵션에서 계정 재인증 없이 방식 전환이나 cert 경로/host/port 수정이 가능합니다.
+   나중에 통합구성요소 옵션에서 계정 재인증 없이 방식 전환이나 cert 경로/포트/모드/host 수정이 가능합니다.
 
 ## 제공 엔티티
 

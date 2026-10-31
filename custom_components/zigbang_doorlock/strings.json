@@ -20,11 +20,27 @@
       },
       "embedded": {
         "title": "Embedded relay",
-        "description": "Home Assistant listens on 18883/TCP and 5683/UDP for the lock. Enter the domain injected into the lock at provisioning and its TLS certificate (the Let's Encrypt App writes /ssl/fullchain.pem and /ssl/privkey.pem).",
+        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is the zigbang_certs folder in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
         "data": {
           "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
           "cert_file": "Certificate (fullchain) path",
           "cert_key": "Private key path"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Only change these if the lock was provisioned with different ports, or if you want shadow mode.",
+            "data": {
+              "mqtts_port": "MQTTS port (TCP)",
+              "udp_port": "UDP holepunch port",
+              "route_mode": "Relay mode"
+            },
+            "data_description": {
+              "mqtts_port": "Must match --service-port used at provisioning.",
+              "udp_port": "Must match --service-port2 used at provisioning.",
+              "route_mode": "Proxy: pass-through only. Shadow: also answers the lock locally while the Zigbang cloud is unreachable."
+            }
+          }
         }
       },
       "external": {
@@ -60,11 +76,27 @@
       },
       "embedded": {
         "title": "Embedded relay",
-        "description": "Home Assistant listens on 18883/TCP and 5683/UDP for the lock. Enter the domain injected into the lock at provisioning and its TLS certificate (the Let's Encrypt App writes /ssl/fullchain.pem and /ssl/privkey.pem).",
+        "description": "Home Assistant opens the lock-facing ports itself (default 18883/TCP and 5683/UDP). Enter the domain injected into the lock at provisioning and its TLS certificate. Default location is the zigbang_certs folder in your HA config directory; on HAOS with the Let's Encrypt App, /ssl is suggested automatically.",
         "data": {
           "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
           "cert_file": "Certificate (fullchain) path",
           "cert_key": "Private key path"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Only change these if the lock was provisioned with different ports, or if you want shadow mode.",
+            "data": {
+              "mqtts_port": "MQTTS port (TCP)",
+              "udp_port": "UDP holepunch port",
+              "route_mode": "Relay mode"
+            },
+            "data_description": {
+              "mqtts_port": "Must match --service-port used at provisioning.",
+              "udp_port": "Must match --service-port2 used at provisioning.",
+              "route_mode": "Proxy: pass-through only. Shadow: also answers the lock locally while the Zigbang cloud is unreachable."
+            }
+          }
         }
       },
       "external": {
@@ -140,6 +172,14 @@
       },
       "away_indoor_armed": {
         "name": "Indoor security while away"
+      }
+    }
+  },
+  "selector": {
+    "route_mode": {
+      "options": {
+        "proxy": "Proxy (pass-through, default)",
+        "shadow": "Shadow (local fallback during cloud outages)"
       }
     }
   }

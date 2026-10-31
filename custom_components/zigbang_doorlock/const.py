@@ -27,15 +27,31 @@ RELAY_MODE_EXTERNAL = "external"
 CONF_CERT_NAME = "cert_name"
 CONF_CERT_FILE = "cert_file"
 CONF_CERT_KEY = "cert_key"
-# HAOS 표준 인증서 공유경로(커뮤니티 Let's Encrypt App 등이 채워줌) — relay App 기본값과 동일.
-DEFAULT_CERT_FILE = "/ssl/fullchain.pem"
-DEFAULT_CERT_KEY = "/ssl/privkey.pem"
+# 인증서 기본경로: HA 설정폴더 아래 zigbang_certs/(모든 설치방식에서 HA 가 보는 위치 — Docker 로 띄운
+# HA 엔 /config 만 마운트돼있는 경우가 많음). 단 HAOS 표준 공유경로(/ssl, 커뮤니티 Let's Encrypt App 이
+# 채우고 갱신까지 해줌)에 둘 다 이미 있으면 그쪽을 기본값으로 제안(config_flow._default_cert_paths).
+CERT_DIR = "zigbang_certs"
+CERT_FILE_NAME = "fullchain.pem"
+CERT_KEY_NAME = "privkey.pem"
+HAOS_CERT_FILE = "/ssl/fullchain.pem"
+HAOS_CERT_KEY = "/ssl/privkey.pem"
 
-# 내장 relay: PyPI 패키지 버전 = relay 바이너리 버전. listen 포트는 provision 시 락에 주입하는 값
-# (RELAY_SETUP.md 7단계)과 같아야 하므로 고정. upstream 은 docker/relay.toml.example 과 동일.
+# 내장 relay 고급설정(config flow 의 접힌 "advanced" 섹션). listen 포트는 provision 시 락에 주입한
+# 값(RELAY_SETUP.md 7단계, 기본 18883/5683)과 같아야 함. 이 키들이 없는 entry 는 기본값으로 동작.
+SECTION_ADVANCED = "advanced"
+CONF_MQTTS_PORT = "mqtts_port"
+CONF_UDP_PORT = "udp_port"
+CONF_ROUTE_MODE = "route_mode"
+DEFAULT_MQTTS_PORT = 18883
+DEFAULT_UDP_PORT = 5683
+# proxy: 순수 통과+관찰(기본). shadow: + ack 선응답/업스트림 장애시 로컬 대신응답(패키지 기본 rules 사용).
+# decloud(업스트림 없는 완전 로컬)는 통합 쪽 동작 검증 전이라 아직 노출 안 함.
+ROUTE_MODE_PROXY = "proxy"
+ROUTE_MODE_SHADOW = "shadow"
+ROUTE_MODES = [ROUTE_MODE_PROXY, ROUTE_MODE_SHADOW]
+
+# 내장 relay: PyPI 패키지 버전 = relay 바이너리 버전. upstream 은 docker/relay.toml.example 과 동일.
 RELAY_REQUIREMENT = "zigbang-relay==0.1.6"
-EMBEDDED_LISTEN_MQTTS = "0.0.0.0:18883"
-EMBEDDED_LISTEN_UDP = "0.0.0.0:5683"
 UPSTREAM_MQTTS = "mqtttcp.homeiot.zigbang-iot.com:8883"
 UPSTREAM_UDP = "mqttudp.homeiot.zigbang-iot.com:5683"
 
