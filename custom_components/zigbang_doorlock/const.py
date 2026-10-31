@@ -19,6 +19,26 @@ CONF_RELAY_PASSWORD = "relay_password"
 
 DEFAULT_RELAY_PORT = 9883
 
+# relay 실행 방식: embedded(HA 가 subprocess 로 직접 띄움, embedded_relay.py) | external(따로 띄운
+# Docker/App 의 observer host:port 에 접속). 이 키가 없는 예전 entry 는 external 로 취급.
+CONF_RELAY_MODE = "relay_mode"
+RELAY_MODE_EMBEDDED = "embedded"
+RELAY_MODE_EXTERNAL = "external"
+CONF_CERT_NAME = "cert_name"
+CONF_CERT_FILE = "cert_file"
+CONF_CERT_KEY = "cert_key"
+# HAOS 표준 인증서 공유경로(커뮤니티 Let's Encrypt App 등이 채워줌) — relay App 기본값과 동일.
+DEFAULT_CERT_FILE = "/ssl/fullchain.pem"
+DEFAULT_CERT_KEY = "/ssl/privkey.pem"
+
+# 내장 relay: PyPI 패키지 버전 = relay 바이너리 버전. listen 포트는 provision 시 락에 주입하는 값
+# (RELAY_SETUP.md 7단계)과 같아야 하므로 고정. upstream 은 docker/relay.toml.example 과 동일.
+RELAY_REQUIREMENT = "zigbang-relay==0.1.6"
+EMBEDDED_LISTEN_MQTTS = "0.0.0.0:18883"
+EMBEDDED_LISTEN_UDP = "0.0.0.0:5683"
+UPSTREAM_MQTTS = "mqtttcp.homeiot.zigbang-iot.com:8883"
+UPSTREAM_UDP = "mqttudp.homeiot.zigbang-iot.com:5683"
+
 # HA 전용 영구 unlock pin에 항상 붙이는 이름(build_register_key 기본값과 동일). 저장된 토큰이
 # entry.data와 안 맞아도 이 이름의 pin이 락에 이미 있으면 그 토큰을 채택해서 재사용한다 —
 # 안 그러면 재시작마다 새 토큰을 만들어서 매번 새 pin이 쌓인다(실측 확인된 버그, 2026-08-20).

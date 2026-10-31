@@ -1,9 +1,11 @@
-"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 서버 host/port(+선택적 basic auth)."""
+"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 방식 선택 — 내장(HA 가 직접 띄움, cert 만
+입력) 또는 외부(따로 띄운 relay 의 observer host/port + 선택적 basic auth)."""
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -13,16 +15,24 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import ZigbangAuthError, ZigbangCloudClient, ZigbangConnectionError, generate_imei
 from .const import (
+    CONF_CERT_FILE,
+    CONF_CERT_KEY,
+    CONF_CERT_NAME,
     CONF_HOST,
     CONF_IMEI,
     CONF_LOCKS,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_RELAY_MODE,
     CONF_RELAY_PASSWORD,
     CONF_RELAY_USERNAME,
     CONF_USERNAME,
+    DEFAULT_CERT_FILE,
+    DEFAULT_CERT_KEY,
     DEFAULT_RELAY_PORT,
     DOMAIN,
+    RELAY_MODE_EMBEDDED,
+    RELAY_MODE_EXTERNAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +44,24 @@ _USER_SCHEMA = vol.Schema(
         vol.Optional(CONF_IMEI): str,
     }
 )
+
+
+_RELAY_MENU = [RELAY_MODE_EMBEDDED, RELAY_MODE_EXTERNAL]
+
+
+def _embedded_schema(current: dict[str, Any]) -> vol.Schema:
+    cert_name = current.get(CONF_CERT_NAME)
+    return vol.Schema(
+        {
+            vol.Required(CONF_CERT_NAME, **({"default": cert_name} if cert_name else {})): str,
+            vol.Required(CONF_CERT_FILE, default=current.get(CONF_CERT_FILE, DEFAULT_CERT_FILE)): str,
+            vol.Required(CONF_CERT_KEY, default=current.get(CONF_CERT_KEY, DEFAULT_CERT_KEY)): str,
+        }
+    )
+
+
+def _cert_files_exist(cert_file: str, cert_key: str) -> bool:
+    return Path(cert_file).is_file() and Path(cert_key).is_file()
 
 
 def _relay_schema(current: dict[str, Any] | None = None) -> vol.Schema:
@@ -100,21 +128,33 @@ class ZigbangConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_IMEI: imei,
                     }
                     self._locks = locks
-                    return await self.async_step_relay()
+                    return self.async_show_menu(step_id="relay", menu_options=_RELAY_MENU)
 
         return self.async_show_form(step_id="user", data_schema=_USER_SCHEMA, errors=errors)
 
-    async def async_step_relay(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+    async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if await self.hass.async_add_executor_job(_cert_files_exist, user_input[CONF_CERT_FILE], user_input[CONF_CERT_KEY]):
+                return self._create_entry({CONF_RELAY_MODE: RELAY_MODE_EMBEDDED, **user_input})
+            errors["base"] = "cert_not_found"
+
+        return self.async_show_form(step_id="embedded", data_schema=_embedded_schema(user_input or {}), errors=errors)
+
+    async def async_step_external(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             if await _test_relay_connection(user_input[CONF_HOST], user_input[CONF_PORT]):
-                return self.async_create_entry(
-                    title="Zigbang 도어락",
-                    data={**self._account_data, **user_input, CONF_LOCKS: self._locks},
-                )
+                return self._create_entry({CONF_RELAY_MODE: RELAY_MODE_EXTERNAL, **user_input})
             errors["base"] = "relay_unreachable"
 
-        return self.async_show_form(step_id="relay", data_schema=_relay_schema(), errors=errors)
+        return self.async_show_form(step_id="external", data_schema=_relay_schema(), errors=errors)
+
+    def _create_entry(self, relay_data: dict[str, Any]) -> config_entries.FlowResult:
+        return self.async_create_entry(
+            title="Zigbang 도어락",
+            data={**self._account_data, **relay_data, CONF_LOCKS: self._locks},
+        )
 
     @staticmethod
     @callback
@@ -123,14 +163,29 @@ class ZigbangConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class ZigbangOptionsFlow(config_entries.OptionsFlow):
-    """relay가 이사가도(IP/포트 변경) 계정 재인증 없이 host/port만 수정."""
+    """계정 재인증 없이 relay 방식(내장/외부)과 그 설정(cert 경로, 외부 relay 이사 등)만 변경."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+        return self.async_show_menu(step_id="init", menu_options=_RELAY_MENU)
+
+    async def async_step_embedded(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if await self.hass.async_add_executor_job(_cert_files_exist, user_input[CONF_CERT_FILE], user_input[CONF_CERT_KEY]):
+                return self.async_create_entry(title="", data={CONF_RELAY_MODE: RELAY_MODE_EMBEDDED, **user_input})
+            errors["base"] = "cert_not_found"
+
+        current = user_input or {**self.config_entry.data, **self.config_entry.options}
+        return self.async_show_form(step_id="embedded", data_schema=_embedded_schema(current), errors=errors)
+
+    async def async_step_external(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
         errors: dict[str, str] = {}
         current = {**self.config_entry.data, **self.config_entry.options}
         if user_input is not None:
             if await _test_relay_connection(user_input[CONF_HOST], user_input[CONF_PORT]):
-                return self.async_create_entry(title="", data=user_input)
+                return self.async_create_entry(title="", data={CONF_RELAY_MODE: RELAY_MODE_EXTERNAL, **user_input})
             errors["base"] = "relay_unreachable"
 
-        return self.async_show_form(step_id="init", data_schema=_relay_schema(current), errors=errors)
+        # 내장 모드였던 entry 엔 host/port 가 없음 — 그땐 빈 폼(최초 설정과 동일)으로.
+        schema = _relay_schema(current) if CONF_HOST in current else _relay_schema()
+        return self.async_show_form(step_id="external", data_schema=schema, errors=errors)

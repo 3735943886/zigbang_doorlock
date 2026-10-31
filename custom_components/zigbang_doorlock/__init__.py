@@ -28,17 +28,23 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
+from . import embedded_relay
 from .api import ZigbangCloudClient
 from .const import (
     ACCESS_LABELS,
+    CONF_CERT_FILE,
+    CONF_CERT_KEY,
+    CONF_CERT_NAME,
     CONF_HOST,
     CONF_IMEI,
     CONF_LOCKS,
     CONF_PASSWORD,
     CONF_PORT,
+    CONF_RELAY_MODE,
     CONF_RELAY_PASSWORD,
     CONF_RELAY_USERNAME,
     CONF_USERNAME,
@@ -46,6 +52,7 @@ from .const import (
     HA_PIN_NAME,
     PIN_TYPE_LABELS,
     PLATFORMS,
+    RELAY_MODE_EMBEDDED,
     SIGNAL_EVENT,
 )
 from .coordinator import ZigbangCoordinator
@@ -56,6 +63,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # 내장 relay 는 클라우드 REST 보다 먼저 띄운다 — 못 띄우면(NotReady) 재시도마다 로그인을 반복하지 않게.
+    host, port, relay_username, relay_password = await _async_relay_endpoint(hass, entry)
+
     locks: list[dict[str, Any]] = await _ensure_ha_pin_tokens(hass, entry, entry.data[CONF_LOCKS])
     locks_by_tpid = {lock["tp_id"]: lock for lock in locks}
     ha_pin_tokens = {tp_id: lock["ha_pin_token"] for tp_id, lock in locks_by_tpid.items()}
@@ -93,9 +103,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
         for tp_id, lock in locks_by_tpid.items()
     }
-
-    host, port = _relay_target(entry)
-    relay_username, relay_password = _relay_auth(entry)
 
     def on_message(tp_id: str, payload: dict[str, Any]) -> None:
         _handle_relay_message(hass, entry.entry_id, coordinator, tp_id, payload)
@@ -356,6 +363,22 @@ async def async_reset_ha_pins(hass: HomeAssistant, entry: ConfigEntry, tp_id: st
     _replace_pin_registry(coordinator, tp_id, _strip_pin_tokens(registry_after))
 
     return len(targets)
+
+
+async def _async_relay_endpoint(hass: HomeAssistant, entry: ConfigEntry) -> tuple[str, int, str | None, str | None]:
+    """RelayClient 가 붙을 observer (host, port, username, password). 내장 모드면 relay 를 띄운다."""
+    conf = {**entry.data, **entry.options}
+    if conf.get(CONF_RELAY_MODE) != RELAY_MODE_EMBEDDED:
+        return (*_relay_target(entry), *_relay_auth(entry))
+    try:
+        port = await embedded_relay.async_acquire(
+            hass, entry.entry_id, conf[CONF_CERT_NAME], conf[CONF_CERT_FILE], conf[CONF_CERT_KEY]
+        )
+    except embedded_relay.EmbeddedRelayError as err:
+        raise ConfigEntryNotReady(str(err)) from err
+    # 이후 단계에서 setup 이 실패해도(NotReady 포함) on_unload 는 불리므로 refcount 가 안 샌다.
+    entry.async_on_unload(lambda: embedded_relay.async_release(hass, entry.entry_id))
+    return "127.0.0.1", port, None, None  # loopback 전용 observer 라 무인증
 
 
 def _relay_target(entry: ConfigEntry) -> tuple[str, int]:

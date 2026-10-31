@@ -11,8 +11,25 @@
         }
       },
       "relay": {
-        "title": "Local relay server",
-        "description": "Address of the ../zigbang relay's observer port.",
+        "title": "Relay",
+        "description": "How should the local relay run? Embedded is simplest: Home Assistant runs the relay itself (the lock goes offline while HA restarts). Choose external if you already run the relay as a Docker container or App.",
+        "menu_options": {
+          "embedded": "Embedded (recommended): run the relay inside Home Assistant",
+          "external": "External (advanced): connect to a relay you run yourself"
+        }
+      },
+      "embedded": {
+        "title": "Embedded relay",
+        "description": "Home Assistant listens on 18883/TCP and 5683/UDP for the lock. Enter the domain injected into the lock at provisioning and its TLS certificate (the Let's Encrypt App writes /ssl/fullchain.pem and /ssl/privkey.pem).",
+        "data": {
+          "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
+          "cert_file": "Certificate (fullchain) path",
+          "cert_key": "Private key path"
+        }
+      },
+      "external": {
+        "title": "External relay",
+        "description": "Address of the relay's observer port (default 9883).",
         "data": {
           "host": "Host",
           "port": "Port",
@@ -25,7 +42,8 @@
       "invalid_auth": "Login failed: check ID, password, or IMEI.",
       "cannot_connect": "Could not reach the Zigbang cloud server.",
       "no_locks_found": "No doorlocks registered on this account.",
-      "relay_unreachable": "Could not reach the relay server."
+      "relay_unreachable": "Could not reach the relay server.",
+      "cert_not_found": "Certificate or key file not found at the given path."
     },
     "abort": {
       "already_configured": "This account is already configured."
@@ -34,6 +52,24 @@
   "options": {
     "step": {
       "init": {
+        "title": "Relay",
+        "menu_options": {
+          "embedded": "Embedded (recommended): run the relay inside Home Assistant",
+          "external": "External (advanced): connect to a relay you run yourself"
+        }
+      },
+      "embedded": {
+        "title": "Embedded relay",
+        "description": "Home Assistant listens on 18883/TCP and 5683/UDP for the lock. Enter the domain injected into the lock at provisioning and its TLS certificate (the Let's Encrypt App writes /ssl/fullchain.pem and /ssl/privkey.pem).",
+        "data": {
+          "cert_name": "Relay domain (e.g. relay.example.duckdns.org)",
+          "cert_file": "Certificate (fullchain) path",
+          "cert_key": "Private key path"
+        }
+      },
+      "external": {
+        "title": "External relay",
+        "description": "Address of the relay's observer port (default 9883).",
         "data": {
           "host": "Host",
           "port": "Port",
@@ -43,7 +79,8 @@
       }
     },
     "error": {
-      "relay_unreachable": "Could not reach the relay server."
+      "relay_unreachable": "Could not reach the relay server.",
+      "cert_not_found": "Certificate or key file not found at the given path."
     }
   },
   "entity": {

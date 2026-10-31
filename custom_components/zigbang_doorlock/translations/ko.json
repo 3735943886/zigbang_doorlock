@@ -11,8 +11,25 @@
         }
       },
       "relay": {
-        "title": "로컬 relay 서버",
-        "description": "../zigbang relay의 observer 포트 주소를 입력하세요.",
+        "title": "relay",
+        "description": "로컬 relay를 어떻게 실행할까요? 내장 방식이 가장 간단합니다 — HA가 relay를 직접 실행합니다(HA 재시작 중엔 도어락이 잠깐 오프라인). 이미 Docker 컨테이너/App으로 relay를 띄워두셨다면 외부를 고르세요.",
+        "menu_options": {
+          "embedded": "내장 (권장): HA 안에서 relay 실행",
+          "external": "외부 (고급): 직접 띄운 relay에 연결"
+        }
+      },
+      "embedded": {
+        "title": "내장 relay",
+        "description": "HA가 도어락용으로 18883/TCP, 5683/UDP 포트를 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요(Let's Encrypt App이 /ssl/fullchain.pem, /ssl/privkey.pem에 만들어 줍니다).",
+        "data": {
+          "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
+          "cert_file": "인증서(fullchain) 경로",
+          "cert_key": "개인키 경로"
+        }
+      },
+      "external": {
+        "title": "외부 relay",
+        "description": "relay observer 포트(기본 9883)의 주소를 입력하세요.",
         "data": {
           "host": "호스트",
           "port": "포트",
@@ -25,7 +42,8 @@
       "invalid_auth": "로그인 실패: 아이디, 비밀번호, IMEI를 확인해주세요.",
       "cannot_connect": "직방 서버에 연결할 수 없습니다.",
       "no_locks_found": "이 계정에 등록된 도어락이 없습니다.",
-      "relay_unreachable": "relay 서버에 연결할 수 없습니다."
+      "relay_unreachable": "relay 서버에 연결할 수 없습니다.",
+      "cert_not_found": "입력한 경로에 인증서 또는 개인키 파일이 없습니다."
     },
     "abort": {
       "already_configured": "이미 등록된 계정입니다."
@@ -34,6 +52,24 @@
   "options": {
     "step": {
       "init": {
+        "title": "relay",
+        "menu_options": {
+          "embedded": "내장 (권장): HA 안에서 relay 실행",
+          "external": "외부 (고급): 직접 띄운 relay에 연결"
+        }
+      },
+      "embedded": {
+        "title": "내장 relay",
+        "description": "HA가 도어락용으로 18883/TCP, 5683/UDP 포트를 엽니다. 프로비저닝 때 도어락에 주입한 도메인과 그 TLS 인증서 경로를 입력하세요(Let's Encrypt App이 /ssl/fullchain.pem, /ssl/privkey.pem에 만들어 줍니다).",
+        "data": {
+          "cert_name": "relay 도메인 (예: relay.example.duckdns.org)",
+          "cert_file": "인증서(fullchain) 경로",
+          "cert_key": "개인키 경로"
+        }
+      },
+      "external": {
+        "title": "외부 relay",
+        "description": "relay observer 포트(기본 9883)의 주소를 입력하세요.",
         "data": {
           "host": "호스트",
           "port": "포트",
@@ -43,7 +79,8 @@
       }
     },
     "error": {
-      "relay_unreachable": "relay 서버에 연결할 수 없습니다."
+      "relay_unreachable": "relay 서버에 연결할 수 없습니다.",
+      "cert_not_found": "입력한 경로에 인증서 또는 개인키 파일이 없습니다."
     }
   },
   "entity": {
