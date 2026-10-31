@@ -61,6 +61,8 @@ from .relay_client import RelayClient
 
 _LOGGER = logging.getLogger(__name__)
 
+_SEED_TIMEOUT = 30  # 시작시 클라우드 REST 시딩 전체 상한(초)
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 내장 relay 는 클라우드 REST 보다 먼저 띄운다 — 못 띄우면(NotReady) 재시도마다 로그인을 반복하지 않게.
@@ -226,29 +228,32 @@ async def _fetch_initial_cloud_state(
     adopted_tokens: dict[str, str] = {}
     seed_ok = True
     try:
-        client = _build_cloud_client(hass, entry)
-        await client.login()
-        for lock in await client.fetch_doorlocks():
-            if lock["tp_id"] in locks_by_tpid:
-                live_status_by_tpid[lock["tp_id"]] = lock
-        for tp_id, lock in locks_by_tpid.items():
-            raw = await client.fetch_pin_registry(lock["device_id"])
-            public_registries[tp_id] = _strip_pin_tokens(raw)
-            _warn_if_duplicate_ha_pins(raw, tp_id)
-            if _has_ha_pin(raw, ha_pin_tokens[tp_id]):
-                already_registered.add(tp_id)
-                continue
-            existing = _find_named_pin(raw, HA_PIN_NAME)
-            if existing is not None:
-                _LOGGER.info(
-                    "저장된 HA pin 토큰이 락과 안 맞아서, 락에 이미 등록된 HA pin 토큰을 재사용합니다"
-                    "(tpId=%s) — 새로 등록하지 않음", tp_id,
-                )
-                adopted_tokens[tp_id] = existing["pin_token"]
-                already_registered.add(tp_id)
+        # HA 공용 aiohttp 세션은 요청당 5분까지 기다린다 — 클라우드가 응답 없이 걸리면 그동안 entry 설정과
+        # 엔티티 생성이 멈추므로 시딩 전체에 상한을 둔다(넘으면 아래와 같이 시딩 실패로 진행).
+        async with asyncio.timeout(_SEED_TIMEOUT):
+            client = _build_cloud_client(hass, entry)
+            await client.login()
+            for lock in await client.fetch_doorlocks():
+                if lock["tp_id"] in locks_by_tpid:
+                    live_status_by_tpid[lock["tp_id"]] = lock
+            for tp_id, lock in locks_by_tpid.items():
+                raw = await client.fetch_pin_registry(lock["device_id"])
+                public_registries[tp_id] = _strip_pin_tokens(raw)
+                _warn_if_duplicate_ha_pins(raw, tp_id)
+                if _has_ha_pin(raw, ha_pin_tokens[tp_id]):
+                    already_registered.add(tp_id)
+                    continue
+                existing = _find_named_pin(raw, HA_PIN_NAME)
+                if existing is not None:
+                    _LOGGER.info(
+                        "저장된 HA pin 토큰이 락과 안 맞아서, 락에 이미 등록된 HA pin 토큰을 재사용합니다"
+                        "(tpId=%s) — 새로 등록하지 않음", tp_id,
+                    )
+                    adopted_tokens[tp_id] = existing["pin_token"]
+                    already_registered.add(tp_id)
     except Exception as err:  # noqa: BLE001 - 여기서 실패는 치명적이지 않음(아래 docstring)
         seed_ok = False
-        _LOGGER.warning("클라우드 상태 시딩 실패(카드/지문 세분화·보안설정 스위치 초기값은 안 되지만 나머지는 정상 동작): %s", err)
+        _LOGGER.warning("클라우드 상태 시딩 실패(카드/지문 세분화·보안설정 스위치 초기값은 안 되지만 나머지는 정상 동작): %s", err or type(err).__name__)
     return public_registries, live_status_by_tpid, already_registered, adopted_tokens, seed_ok
 
 

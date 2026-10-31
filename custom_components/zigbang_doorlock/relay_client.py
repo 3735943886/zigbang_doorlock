@@ -82,6 +82,11 @@ class RelayClient:
         # 실제 상태를 모른 채 등록하는 거라 기존 키와 중복될 수 있다 — 이후 REST 조회가 성공하면
         # (수동 새로고침 등) mark_registry_seed_ok로 갱신된다.
         self._registry_seed_ok = registry_seed_ok
+        # self-heal 등록은 메시지 루프 밖(별도 태스크)에서 — 루프 안에서 기다리면 그 등록의 ACK 를 읽을 루프가
+        # 멈춰 있어서 항상 타임아웃까지 기다리고, 그동안 다른 락 메시지도 밀린다. 등록이 unlock 등과 겹쳐
+        # 두 번 나가지 않게 tpId 별 락으로 직렬화(_register_now).
+        self._heal_tasks: dict[str, asyncio.Task[None]] = {}
+        self._register_locks: dict[str, asyncio.Lock] = {}
 
     async def run(self) -> None:
         """상시 재연결 루프. hass.async_create_background_task 등으로 백그라운드 실행."""
@@ -115,6 +120,8 @@ class RelayClient:
 
     async def stop(self) -> None:
         self._stop.set()
+        for task in list(self._heal_tasks.values()):
+            task.cancel()
 
     def _notify_session_all(self, online: bool) -> None:
         if self._on_session is not None:
@@ -154,11 +161,13 @@ class RelayClient:
         sid = payload.get("sId")
         if sid:
             self._sid_by_tpid[tpid] = sid
-            if tpid not in self._registered:
+            if tpid not in self._registered and tpid not in self._heal_tasks:
                 # REST 로 시딩할 때(HA 재시작 등) 이 tpId 의 HA pin 이 락에 없는 걸로 확인됐던
                 # 경우 — unlock 을 기다리지 않고, 락 트래픽이 처음 관측되는 즉시 self-heal 등록.
                 # (예: 사용자가 앱에서 HA 키를 직접 지웠거나 락이 초기화된 경우 대비)
-                await self._self_heal_registration(tpid, sid)
+                task = asyncio.get_running_loop().create_task(self._self_heal_registration(tpid, sid))
+                self._heal_tasks[tpid] = task
+                task.add_done_callback(lambda _task, tpid=tpid: self._heal_tasks.pop(tpid, None))
 
         # 락→클라우드 funcType 030 A(msgCode MSGBA0300002)는 우리가 보낸 Q(508/407/408/420)의
         # 완료 ACK — 같은 msgId로 되돌아온다(실캡처 확인). publish_and_wait_ack가 기다리는 중이면 깨운다.
@@ -297,10 +306,15 @@ class RelayClient:
     async def _self_heal_registration(self, tpid: str, sid: str) -> None:
         try:
             await self._register_now(tpid, sid)
-        except RelayUnlockError as err:
+        except (RelayUnlockError, aiomqtt.MqttError) as err:
             _LOGGER.warning("HA pin 자동 재등록 실패(tpId=%s): %s", tpid, err)
 
     async def _register_now(self, tpid: str, sid: str) -> None:
+        async with self._register_locks.setdefault(tpid, asyncio.Lock()):
+            if tpid not in self._registered:  # 기다리는 사이 다른 쪽(self-heal/unlock)이 이미 등록
+                await self._register_locked(tpid, sid)
+
+    async def _register_locked(self, tpid: str, sid: str) -> None:
         if not self._registry_seed_ok:
             # REST 시딩 실패 상태에서 등록하는 거라, 락에 이미 같은 이름의 키가 있었는지
             # 확인할 방법이 없었다(로컬 우선 동작이 이 프로젝트의 핵심 전제라 REST가 안 될 때도

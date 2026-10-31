@@ -164,7 +164,13 @@ class EmbeddedRelay:
         self.observer_port = _free_local_port()
         self._env = {"RELAY_CONFIG_JSON": self._config_json(str(module.RULES_DIR))}
 
-        if failures := await self._spawn_and_check():
+        try:
+            failures = await self._spawn_and_check()
+        except BaseException:
+            # 기동 확인 중 취소(HA 종료 등)돼도 포트를 쥔 relay 가 남지 않게.
+            await self._terminate()
+            raise
+        if failures:
             await self._terminate()
             raise EmbeddedRelayError("relay 기동 실패: " + " / ".join(failures))
 
@@ -192,7 +198,7 @@ class EmbeddedRelay:
         deadline = loop.time() + _STARTUP_GRACE
         while (remaining := deadline - loop.time()) > 0:
             try:
-                line = await asyncio.wait_for(self._proc.stderr.readline(), remaining)
+                line = await asyncio.wait_for(self._readline(), remaining)
             except asyncio.TimeoutError:
                 break
             if not line:  # EOF = 프로세스 종료
@@ -203,6 +209,16 @@ class EmbeddedRelay:
             if "✗ FAIL" in text:
                 failures.append(text)
         return failures
+
+    async def _readline(self) -> bytes:
+        """stderr 한 줄. StreamReader 한도(64KiB)를 넘는 줄은 버리고 계속 읽는다 — ValueError 로 감독 태스크가
+        죽으면 stderr 를 아무도 안 읽어 파이프가 차고, relay 의 eprint!(동기 쓰기)가 막혀 relay 전체가 멈춘다."""
+        assert self._proc is not None and self._proc.stderr is not None
+        while True:
+            try:
+                return await self._proc.stderr.readline()
+            except ValueError:
+                _LOGGER.debug("relay: 너무 긴 로그 줄 생략")
 
     def _log_line(self, raw: bytes) -> str:
         text = _LINE_PREFIX.sub("", raw.decode(errors="replace").rstrip())
@@ -219,7 +235,7 @@ class EmbeddedRelay:
         attempt = 0
         while not self._stopping:
             assert self._proc is not None
-            while line := await self._proc.stderr.readline():
+            while line := await self._readline():
                 self._log_line(line)
             await self._proc.wait()
             if self._stopping:
