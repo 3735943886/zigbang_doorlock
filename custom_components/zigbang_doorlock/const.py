@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 DOMAIN = "zigbang_doorlock"
-PLATFORMS = ["lock", "sensor", "event", "button", "switch"]
+PLATFORMS = ["lock", "sensor", "binary_sensor", "event", "button", "switch"]
 
 MANUFACTURER = "Zigbang (Samsung SDS IHP)"
 
@@ -44,14 +44,21 @@ CONF_UDP_PORT = "udp_port"
 CONF_ROUTE_MODE = "route_mode"
 DEFAULT_MQTTS_PORT = 18883
 DEFAULT_UDP_PORT = 5683
-# proxy: 순수 통과+관찰(기본). shadow: + ack 선응답/업스트림 장애시 로컬 대신응답(패키지 기본 rules 사용).
+# shadow(기본): 통과+관찰 + ack 선응답/업스트림(직방 클라우드) 장애시 로컬 대신응답(패키지 기본 rules 사용)
+# — 클라우드가 죽어도 락/HA 가 계속 동작. proxy: 순수 통과+관찰만.
 # decloud(업스트림 없는 완전 로컬)는 통합 쪽 동작 검증 전이라 아직 노출 안 함.
 ROUTE_MODE_PROXY = "proxy"
 ROUTE_MODE_SHADOW = "shadow"
-ROUTE_MODES = [ROUTE_MODE_PROXY, ROUTE_MODE_SHADOW]
+ROUTE_MODES = [ROUTE_MODE_SHADOW, ROUTE_MODE_PROXY]
+DEFAULT_ROUTE_MODE = ROUTE_MODE_SHADOW
+
+# 락이 relay 에서 끊긴 뒤 이 시간(초)이 지나도 안 돌아오면 엔티티를 unavailable 로. relay 는 클라우드 연결이
+# 리셋될 때마다 세션을 일부러 끊고 락이 2~3초 안에 재접속하므로(../zigbang session.rs 복구 폴링) 그 정도
+# 깜빡임은 무시. "relay 연결" 센서(binary_sensor.py)는 유예 없이 즉시 반영.
+RELAY_OFFLINE_GRACE = 30
 
 # 내장 relay: PyPI 패키지 버전 = relay 바이너리 버전. upstream 은 docker/relay.toml.example 과 동일.
-RELAY_REQUIREMENT = "zigbang-relay==0.1.6"
+RELAY_REQUIREMENT = "zigbang-relay==0.1.8"
 UPSTREAM_MQTTS = "mqtttcp.homeiot.zigbang-iot.com:8883"
 UPSTREAM_UDP = "mqttudp.homeiot.zigbang-iot.com:5683"
 

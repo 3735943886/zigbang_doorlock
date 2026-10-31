@@ -38,7 +38,7 @@
             "data_description": {
               "mqtts_port": "Must match --service-port used at provisioning.",
               "udp_port": "Must match --service-port2 used at provisioning.",
-              "route_mode": "Proxy: pass-through only. Shadow: also answers the lock locally while the Zigbang cloud is unreachable."
+              "route_mode": "Shadow (default): also answers the lock locally while the Zigbang cloud is unreachable. Proxy: pass-through only."
             }
           }
         }
@@ -94,7 +94,7 @@
             "data_description": {
               "mqtts_port": "Must match --service-port used at provisioning.",
               "udp_port": "Must match --service-port2 used at provisioning.",
-              "route_mode": "Proxy: pass-through only. Shadow: also answers the lock locally while the Zigbang cloud is unreachable."
+              "route_mode": "Shadow (default): also answers the lock locally while the Zigbang cloud is unreachable. Proxy: pass-through only."
             }
           }
         }
@@ -130,6 +130,11 @@
       },
       "rssi": {
         "name": "Wi-Fi signal"
+      }
+    },
+    "binary_sensor": {
+      "relay_connected": {
+        "name": "Relay connection"
       }
     },
     "event": {
@@ -178,8 +183,8 @@
   "selector": {
     "route_mode": {
       "options": {
-        "proxy": "Proxy (pass-through, default)",
-        "shadow": "Shadow (local fallback during cloud outages)"
+        "shadow": "Shadow (local fallback during cloud outages, default)",
+        "proxy": "Proxy (pass-through only)"
       }
     }
   }

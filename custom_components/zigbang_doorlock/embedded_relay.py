@@ -44,10 +44,10 @@ from .const import (
     CONF_ROUTE_MODE,
     CONF_UDP_PORT,
     DEFAULT_MQTTS_PORT,
+    DEFAULT_ROUTE_MODE,
     DEFAULT_UDP_PORT,
     DOMAIN,
     RELAY_REQUIREMENT,
-    ROUTE_MODE_PROXY,
     UPSTREAM_MQTTS,
     UPSTREAM_UDP,
 )
@@ -73,7 +73,7 @@ class EmbeddedConfig:
     cert_key: str
     mqtts_port: int = DEFAULT_MQTTS_PORT
     udp_port: int = DEFAULT_UDP_PORT
-    route_mode: str = ROUTE_MODE_PROXY
+    route_mode: str = DEFAULT_ROUTE_MODE
 
     @classmethod
     def from_conf(cls, conf: dict[str, Any]) -> EmbeddedConfig:
@@ -84,7 +84,7 @@ class EmbeddedConfig:
             cert_key=conf[CONF_CERT_KEY],
             mqtts_port=conf.get(CONF_MQTTS_PORT, DEFAULT_MQTTS_PORT),
             udp_port=conf.get(CONF_UDP_PORT, DEFAULT_UDP_PORT),
-            route_mode=conf.get(CONF_ROUTE_MODE, ROUTE_MODE_PROXY),
+            route_mode=conf.get(CONF_ROUTE_MODE, DEFAULT_ROUTE_MODE),
         )
 
 

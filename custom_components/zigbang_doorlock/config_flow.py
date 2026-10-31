@@ -39,13 +39,13 @@ from .const import (
     CERT_KEY_NAME,
     DEFAULT_MQTTS_PORT,
     DEFAULT_RELAY_PORT,
+    DEFAULT_ROUTE_MODE,
     DEFAULT_UDP_PORT,
     DOMAIN,
     HAOS_CERT_FILE,
     HAOS_CERT_KEY,
     RELAY_MODE_EMBEDDED,
     RELAY_MODE_EXTERNAL,
-    ROUTE_MODE_PROXY,
     ROUTE_MODES,
     SECTION_ADVANCED,
 )
@@ -77,7 +77,7 @@ def _embedded_schema(current: dict[str, Any], default_cert: tuple[str, str]) -> 
         {
             vol.Required(CONF_MQTTS_PORT, default=current.get(CONF_MQTTS_PORT, DEFAULT_MQTTS_PORT)): cv.port,
             vol.Required(CONF_UDP_PORT, default=current.get(CONF_UDP_PORT, DEFAULT_UDP_PORT)): cv.port,
-            vol.Required(CONF_ROUTE_MODE, default=current.get(CONF_ROUTE_MODE, ROUTE_MODE_PROXY)): SelectSelector(
+            vol.Required(CONF_ROUTE_MODE, default=current.get(CONF_ROUTE_MODE, DEFAULT_ROUTE_MODE)): SelectSelector(
                 SelectSelectorConfig(options=ROUTE_MODES, mode=SelectSelectorMode.LIST, translation_key=CONF_ROUTE_MODE)
             ),
         }
@@ -87,7 +87,7 @@ def _embedded_schema(current: dict[str, Any], default_cert: tuple[str, str]) -> 
             vol.Required(CONF_CERT_NAME, **({"default": cert_name} if cert_name else {})): str,
             vol.Required(CONF_CERT_FILE, default=current.get(CONF_CERT_FILE, default_cert[0])): str,
             vol.Required(CONF_CERT_KEY, default=current.get(CONF_CERT_KEY, default_cert[1])): str,
-            # 대부분은 기본값(provision 시 주입한 18883/5683, proxy) 그대로라 접어둠.
+            # 대부분은 기본값(provision 시 주입한 18883/5683, shadow) 그대로라 접어둠.
             vol.Required(SECTION_ADVANCED): section(advanced, {"collapsed": True}),
         }
     )

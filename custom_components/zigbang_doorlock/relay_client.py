@@ -29,6 +29,14 @@ _RECONNECT_INTERVAL = 15
 _ACK_TIMEOUT = 1.5
 
 OnMessage = Callable[[str, dict[str, Any]], Awaitable[None] | None]
+# (tpId, relay 에 붙어있는지, relay 세션 이벤트 payload — peer/at, 없으면 {}).
+OnSession = Callable[[str, bool, dict[str, Any]], None]
+
+# relay 0.1.7+ 세션 이벤트(락↔클라우드 실트래픽이 아니라 relay 자체 이벤트, ../zigbang session.rs):
+# relay/session/<tpId> = 접속/종료 {"tpId","online","peer","at"}, relay/sessions = 구독 순간의 접속중
+# 목록 {"online":[...]}(비어있어도 옴 — 이게 오면 목록에 없는 락은 "안 붙어있음"으로 확정).
+_SESSION_TOPIC_PREFIX = "relay/session/"
+_SESSIONS_SNAPSHOT_TOPIC = "relay/sessions"
 
 
 class RelayUnlockError(Exception):
@@ -47,6 +55,7 @@ class RelayClient:
         registry_seed_ok: bool = True,
         username: str | None = None,
         password: str | None = None,
+        on_session: OnSession | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -56,6 +65,7 @@ class RelayClient:
         self._password = password
         self._tracked_tpids = tracked_tpids
         self._on_message = on_message
+        self._on_session = on_session
         self._client: aiomqtt.Client | None = None
         self._sid_by_tpid: dict[str, str] = {}
         self._stop = asyncio.Event()
@@ -84,12 +94,20 @@ class RelayClient:
                     await client.subscribe("#")
                     _LOGGER.info("relay observer 연결됨: %s:%s", self._host, self._port)
                     async for message in client.messages:
-                        await self._handle_message(message.payload)
+                        topic = str(message.topic)
+                        if topic == _SESSIONS_SNAPSHOT_TOPIC or topic.startswith(_SESSION_TOPIC_PREFIX):
+                            self._handle_session(topic, message.payload)
+                        else:
+                            await self._handle_message(message.payload)
             except aiomqtt.MqttError as err:
                 _LOGGER.warning("relay observer 연결 끊김(%s:%s), %s초 후 재시도: %s", self._host, self._port, _RECONNECT_INTERVAL, err)
             except Exception:  # noqa: BLE001 - 재연결 루프는 죽으면 안 됨
                 _LOGGER.exception("relay observer 처리 중 예외")
             finally:
+                if self._client is not None and not self._stop.is_set():  # unload 중엔 엔티티가 이미 내려감
+                    # observer 가 끊기면(relay 종료/재시작 등) 락이 relay 에 붙어있는지 알 수 없고, 내장 relay 면
+                    # 실제로 락도 끊긴 상태 — 끊김으로 표시. 다시 붙으면 relay/sessions 스냅샷으로 바로 복구됨.
+                    self._notify_session_all(False)
                 self._client = None
             if self._stop.is_set():
                 break
@@ -97,6 +115,29 @@ class RelayClient:
 
     async def stop(self) -> None:
         self._stop.set()
+
+    def _notify_session_all(self, online: bool) -> None:
+        if self._on_session is not None:
+            for tpid in self._tracked_tpids:
+                self._on_session(tpid, online, {})
+
+    def _handle_session(self, topic: str, raw_payload: bytes) -> None:
+        if self._on_session is None:
+            return
+        try:
+            payload = json.loads(raw_payload)
+        except (ValueError, TypeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        if topic == _SESSIONS_SNAPSHOT_TOPIC:
+            online = set(payload.get("online") or [])
+            for tpid in self._tracked_tpids:
+                self._on_session(tpid, tpid in online, {})
+            return
+        tpid = payload.get("tpId")
+        if tpid in self._tracked_tpids and isinstance(payload.get("online"), bool):
+            self._on_session(tpid, payload["online"], payload)
 
     async def _handle_message(self, raw_payload: bytes) -> None:
         try:
@@ -125,6 +166,10 @@ class RelayClient:
             fut = self._pending_acks.get(payload.get("msgId"))
             if fut is not None and not fut.done():
                 fut.set_result(payload)
+
+        # 락 트래픽이 보이면 붙어있는 게 확실 — 세션 이벤트가 없는 구버전 relay 에서도 "연결됨"은 알 수 있게.
+        if self._on_session is not None:
+            self._on_session(tpid, True, {})
 
         result = self._on_message(tpid, payload)
         if asyncio.iscoroutine(result):

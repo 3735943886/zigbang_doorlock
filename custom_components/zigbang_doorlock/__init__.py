@@ -31,6 +31,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later
+from homeassistant.util import dt as dt_util
 
 from . import embedded_relay
 from .api import ZigbangCloudClient
@@ -50,6 +52,7 @@ from .const import (
     PIN_TYPE_LABELS,
     PLATFORMS,
     RELAY_MODE_EMBEDDED,
+    RELAY_OFFLINE_GRACE,
     SIGNAL_EVENT,
 )
 from .coordinator import ZigbangCoordinator
@@ -97,12 +100,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "last_pin_id": None,
             "last_unlock_at": None,
             "jammed": False,
+            # 락이 relay 에 붙어있는지(binary_sensor.py) — relay 세션 이벤트/observer 연결로 갱신, 처음엔 미상.
+            "relay_connected": None,
+            "relay_peer": None,
+            "relay_changed_at": None,
         }
         for tp_id, lock in locks_by_tpid.items()
     }
 
     def on_message(tp_id: str, payload: dict[str, Any]) -> None:
         _handle_relay_message(hass, entry.entry_id, coordinator, tp_id, payload)
+
+    def on_session(tp_id: str, online: bool, info: dict[str, Any]) -> None:
+        _handle_relay_session(hass, entry, coordinator, tp_id, online, info)
 
     relay = RelayClient(
         host=host,
@@ -114,6 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ha_pin_tokens=ha_pin_tokens,
         already_registered=already_registered,
         registry_seed_ok=registry_seed_ok,
+        on_session=on_session,
     )
     relay_task = hass.loop.create_task(relay.run(), name=f"{DOMAIN}_relay_{entry.entry_id}")
 
@@ -494,6 +505,27 @@ def _handle_relay_message(
         _merge_state(coordinator, tp_id, patch)
         async_dispatcher_send(hass, SIGNAL_EVENT.format(entry_id, tp_id), event)
         return
+
+
+def _handle_relay_session(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: ZigbangCoordinator, tp_id: str, online: bool, info: dict[str, Any]
+) -> None:
+    """락↔relay 접속상태 갱신(relay_client.OnSession). 락 메시지마다도 불리므로 바뀐 게 없으면 아무것도 안 함."""
+    state = coordinator.data.get(tp_id, {})
+    patch: dict[str, Any] = {}
+    if state.get("relay_connected") != online:
+        patch["relay_connected"] = online
+        # relay 가 보낸 at 이 아니라 HA 수신시각 — 외부 relay 와 시계가 어긋나도 유예(entity.available)가 정확하게.
+        patch["relay_changed_at"] = dt_util.utcnow()
+        if not online:
+            # 유예가 끝나는 시점에 엔티티 available 을 다시 계산시킴(그 사이 재접속했으면 그대로 available).
+            entry.async_on_unload(
+                async_call_later(hass, RELAY_OFFLINE_GRACE + 1, lambda _now: coordinator.async_update_listeners())
+            )
+    if info.get("peer") and info["peer"] != state.get("relay_peer"):
+        patch["relay_peer"] = info["peer"]
+    if patch:
+        _merge_state(coordinator, tp_id, patch)
 
 
 def _merge_state(coordinator: ZigbangCoordinator, tp_id: str, patch: dict[str, Any]) -> None:

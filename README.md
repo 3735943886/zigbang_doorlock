@@ -56,7 +56,7 @@ HA App(Add-on)은 **지원 중단**됐습니다 — 기존 App 사용자는 내�
      `/ssl/`에 인증서를 이미 만들어뒀으면 그 경로가 기본값으로 채워집니다. HA가 도어락용 포트(기본
      18883/TCP, 5683/UDP)를 직접 엽니다 — 같은 포트를 쓰는 relay 컨테이너가 같은 호스트에 떠있으면
      충돌하니 내리고 쓰세요. 접힌 **고급** 섹션에서 포트(다른 포트로 프로비저닝한 경우)와 모드
-     (`proxy`/`shadow`)를 바꿀 수 있습니다.
+     (기본 `shadow` — 직방 클라우드가 끊겨도 relay가 도어락에 대신 응답 / `proxy` — 그대로 중계만)를 바꿀 수 있습니다.
    - **외부**: observer 포트의 host:port(+선택적 relay 사용자명/비밀번호).
 
    나중에 통합구성요소 옵션에서 계정 재인증 없이 방식 전환이나 cert 경로/포트/모드/host 수정이 가능합니다.
@@ -72,6 +72,7 @@ HA App(Add-on)은 **지원 중단**됐습니다 — 기존 App 사용자는 내�
 | `sensor.<name>_battery` | 배터리 %(보정값) |
 | `sensor.<name>_battery_raw` | 배터리 원본값(진단) |
 | `sensor.<name>_rssi` | Wi-Fi 신호세기(dBm, 진단) |
+| `binary_sensor.<name>_relay_connection` | 도어락이 relay에 붙어있는지(진단). `peer`(락 IP:포트)/`changed_at` 속성 포함. 도어락이 30초 넘게 끊겨있으면 이 센서를 뺀 나머지 엔티티는 unavailable이 됨(클라우드 연결 리셋 때마다 생기는 2~3초 재접속은 무시). relay 0.1.8+(내장 relay는 자동)에서 정확 — 구버전 외부 relay면 락 트래픽이 보일 때 "연결"로만 바뀜 |
 | `event.<name>_activity` | 잠금/열림/키등록/키삭제 이벤트. `access`/`pin_id`/`pin_type`/`pin_name` 속성 포함 |
 | `button.<name>_refresh_pin_registry` | pin 레지스트리 즉시 새로고침(진단). 앱에서 pin 이름만 바꾸는 등 relay로 안 보이는 변경 반영용 |
 
