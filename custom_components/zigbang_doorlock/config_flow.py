@@ -1,6 +1,6 @@
-"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 방식 선택 — 내장(HA 가 직접 띄움, 도메인+
-cert 경로, 접힌 고급 섹션에 listen 포트/모드) 또는 외부(따로 띄운 relay 의 observer host/port + 선택적
-basic auth)."""
+"""config_flow: 1) 직방 계정 로그인+도어락목록 조회, 2) relay 방식 선택 — 외부(권장: HA 와 별도로 도는 App/
+Docker/바이너리 relay 의 observer host/port + 선택적 basic auth) 또는 내장(HA 가 직접 띄움, 도메인+cert 경로,
+접힌 고급 섹션에 listen 포트/모드)."""
 from __future__ import annotations
 
 import asyncio
@@ -62,7 +62,7 @@ _USER_SCHEMA = vol.Schema(
 )
 
 
-_RELAY_MENU = [RELAY_MODE_EMBEDDED, RELAY_MODE_EXTERNAL]
+_RELAY_MENU = [RELAY_MODE_EXTERNAL, RELAY_MODE_EMBEDDED]  # 권장(외부)을 위로
 
 
 def _default_cert_paths(hass: HomeAssistant) -> tuple[str, str]:
@@ -234,7 +234,11 @@ class ZigbangOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         current = {**self.config_entry.data, **self.config_entry.options}
         if user_input is not None:
-            if await _test_relay_connection(user_input[CONF_HOST], user_input[CONF_PORT]):
+            # 내장→외부 전환이면 접속확인을 건너뜀: 같은 호스트의 외부 relay 는 내장 relay 가 18883/5683 을 쥐고
+            # 있는 동안 bind 실패로 못 떠서 observer 가 닫혀있는 게 정상이다. 저장→reload 로 내장 relay 가
+            # 내려가 포트가 비면 외부 relay(restart=always)가 뜨고 RelayClient 가 재접속한다("relay 연결" 센서로 확인).
+            switching_from_embedded = current.get(CONF_RELAY_MODE) == RELAY_MODE_EMBEDDED
+            if switching_from_embedded or await _test_relay_connection(user_input[CONF_HOST], user_input[CONF_PORT]):
                 return self.async_create_entry(title="", data={CONF_RELAY_MODE: RELAY_MODE_EXTERNAL, **user_input})
             errors["base"] = "relay_unreachable"
 

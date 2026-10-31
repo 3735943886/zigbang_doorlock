@@ -12,10 +12,10 @@
       },
       "relay": {
         "title": "relay",
-        "description": "로컬 relay를 어떻게 실행할까요? 내장 방식이 가장 간단합니다 — HA가 relay를 직접 실행합니다(HA 재시작 중엔 도어락이 잠깐 오프라인). 이미 Docker 컨테이너/App으로 relay를 띄워두셨다면 외부를 고르세요.",
+        "description": "로컬 relay 실행 방식을 선택하세요. 외부(권장): HA와 별도로 실행되는 relay에 연결합니다(HAOS는 App, 그 외는 Docker 컨테이너 또는 바이너리). 내장: HA가 relay를 직접 실행합니다. HA가 내려가 있는 동안 relay도 멈추며, 오래 꺼져 있으면 도어락이 절전 상태에 들어가 조작(문 여닫기, 키패드)하기 전까지 재접속하지 않습니다.",
         "menu_options": {
-          "embedded": "내장 (권장): HA 안에서 relay 실행",
-          "external": "외부 (고급): 직접 띄운 relay에 연결"
+          "external": "외부 (권장): App/Docker/바이너리로 띄운 relay",
+          "embedded": "내장: HA 안에서 relay 실행"
         }
       },
       "embedded": {
@@ -70,8 +70,8 @@
       "init": {
         "title": "relay",
         "menu_options": {
-          "embedded": "내장 (권장): HA 안에서 relay 실행",
-          "external": "외부 (고급): 직접 띄운 relay에 연결"
+          "external": "외부 (권장): App/Docker/바이너리로 띄운 relay",
+          "embedded": "내장: HA 안에서 relay 실행"
         }
       },
       "embedded": {
@@ -101,7 +101,7 @@
       },
       "external": {
         "title": "외부 relay",
-        "description": "relay observer 포트(기본 9883)의 주소를 입력하세요.",
+        "description": "relay observer 포트(기본 9883)의 주소를 입력하세요. 내장 relay에서 전환할 때는 접속 확인 없이 저장됩니다 — 저장하면 내장 relay가 내려가 18883/5683 포트가 비고, 그때 외부 relay가 뜰 수 있습니다. 이후 \"relay 연결\" 센서로 확인하세요.",
         "data": {
           "host": "호스트",
           "port": "포트",

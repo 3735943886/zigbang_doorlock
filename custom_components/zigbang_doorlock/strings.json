@@ -12,10 +12,10 @@
       },
       "relay": {
         "title": "Relay",
-        "description": "How should the local relay run? Embedded is simplest: Home Assistant runs the relay itself (the lock goes offline while HA restarts). Choose external if you already run the relay as a Docker container or App.",
+        "description": "How should the local relay run? External (recommended): connect to a relay running separately from Home Assistant (HA App on HAOS, or a Docker container / binary). Embedded: Home Assistant runs the relay itself; the relay stops while HA is down, and if HA stays down for a long time the lock enters sleep mode and does not reconnect until it is operated (door opened/closed, keypad).",
         "menu_options": {
-          "embedded": "Embedded (recommended): run the relay inside Home Assistant",
-          "external": "External (advanced): connect to a relay you run yourself"
+          "external": "External (recommended): App / Docker / binary relay",
+          "embedded": "Embedded: run the relay inside Home Assistant"
         }
       },
       "embedded": {
@@ -70,8 +70,8 @@
       "init": {
         "title": "Relay",
         "menu_options": {
-          "embedded": "Embedded (recommended): run the relay inside Home Assistant",
-          "external": "External (advanced): connect to a relay you run yourself"
+          "external": "External (recommended): App / Docker / binary relay",
+          "embedded": "Embedded: run the relay inside Home Assistant"
         }
       },
       "embedded": {
@@ -101,7 +101,7 @@
       },
       "external": {
         "title": "External relay",
-        "description": "Address of the relay's observer port (default 9883).",
+        "description": "Address of the relay's observer port (default 9883). When switching from the embedded relay, the address is saved without a connection check: the embedded relay is stopped on save, freeing ports 18883/5683 for your external relay. Check the \"Relay connection\" sensor afterwards.",
         "data": {
           "host": "Host",
           "port": "Port",
