@@ -33,7 +33,8 @@ OnMessage = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 OnSession = Callable[[str, bool, dict[str, Any]], None]
 
 # relay 0.1.7+ 세션 이벤트(락↔클라우드 실트래픽이 아니라 relay 자체 이벤트, ../zigbang session.rs):
-# relay/session/<tpId> = 접속/종료 {"tpId","online","peer","at"}, relay/sessions = 구독 순간의 접속중
+# relay/session/<tpId> = 접속/종료 {"device","online","peer","at"}(relay 0.1.9 이하는 "device" 대신 "tpId"
+# — _handle_session 이 둘 다 + 토픽까지 처리), relay/sessions = 구독 순간의 접속중
 # 목록 {"online":[...]}(비어있어도 옴 — 이게 오면 목록에 없는 락은 "안 붙어있음"으로 확정).
 _SESSION_TOPIC_PREFIX = "relay/session/"
 _SESSIONS_SNAPSHOT_TOPIC = "relay/sessions"
@@ -142,7 +143,9 @@ class RelayClient:
             for tpid in self._tracked_tpids:
                 self._on_session(tpid, tpid in online, {})
             return
-        tpid = payload.get("tpId")
+        # 기기 id: relay 0.1.10+ 는 "device", 0.1.9 이하는 "tpId". 둘 다 없으면 토픽 relay/session/<id>
+        # 의 뒷부분 — 외부(add-on) relay 가 어느 버전이든 동작.
+        tpid = payload.get("device") or payload.get("tpId") or topic[len(_SESSION_TOPIC_PREFIX):]
         if tpid in self._tracked_tpids and isinstance(payload.get("online"), bool):
             self._on_session(tpid, payload["online"], payload)
 
