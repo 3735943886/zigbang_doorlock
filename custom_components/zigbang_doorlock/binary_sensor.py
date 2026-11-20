@@ -1,6 +1,6 @@
 """락↔relay 연결상태 센서.
 
-relay(0.1.7+)가 observer 로 내보내는 세션 이벤트(relay/session/<tpId>, relay/sessions 스냅샷)로 갱신 —
+relay(0.1.7+)가 observer 로 내보내는 세션 이벤트(relay/session/<기기id>, relay/sessions 스냅샷)로 갱신 —
 relay_client.py 의 OnSession 참조. 세션 이벤트가 없는 구버전 relay 에선 락 트래픽이 보이면 "연결"로만
 바뀌고, observer 연결이 끊기면 "끊김"이 된다.
 """

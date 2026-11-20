@@ -60,6 +60,7 @@ _STARTUP_GRACE = 2.0  # bind 실패(✗ FAIL)는 기동 직후 수 ms 안에 찍
 _RESTART_BACKOFF = (5, 15, 30, 60)
 _STOP_TIMEOUT = 5
 _KEEP_LOG_FILES = 5  # .log/.capture 각각
+_REPLAY_FORMAT_MARKER = ".replay-v2"  # 이 파일이 있으면 replay.json 이 relay 0.1.11+ 형식(_prepare_dirs)
 _LINE_PREFIX = re.compile(r"^\[\s*\d+ms\]\s*")
 
 
@@ -96,7 +97,16 @@ def _free_local_port() -> int:
 
 
 def _prepare_dirs(base: Path) -> None:
-    (base / "state").mkdir(parents=True, exist_ok=True)
+    state = base / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    # relay 0.1.10 이하가 남긴 replay.json 은 키 형식이 다르고(keysync/NFC/<이름> → <pin 토큰>), 원격열림(407)·
+    # 비밀번호(NUM) 키까지 들어 있을 수 있어 장애 후 부트스트랩 때 열림 명령 재생/지운 키 부활 위험이 있다
+    # (zigbang-relay 0.1.10~0.1.12 보안수정). 형식 표식이 없으면 한 번만 지운다 — 다음 키싱크 때 다시 채워짐.
+    marker = state / _REPLAY_FORMAT_MARKER
+    if not marker.exists():
+        with contextlib.suppress(FileNotFoundError):
+            (state / "replay.json").unlink()
+        marker.touch()
     logs = base / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     for suffix in ("*.log", "*.capture"):
